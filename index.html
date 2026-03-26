@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Co-Pilot</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f0e;
+    --surface: #141716;
+    --surface2: #1c1f1d;
+    --border: #2a2e2c;
+    --accent: #b8f5a0;
+    --accent2: #f5e6a0;
+    --accent3: #a0c8f5;
+    --text: #e8ede9;
+    --text-muted: #7a8a7c;
+    --danger: #f5a0a0;
+    --warn: #f5d4a0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(184,245,160,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(184,245,160,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  .config-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .config-bar label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .config-bar input {
+    flex: 1;
+    min-width: 200px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+  }
+
+  .config-bar input:focus { outline: none; border-color: var(--accent); }
+
+  .btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0d1a0a;
+  }
+  .btn-primary:hover { background: #cdffc0; transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Status bar */
+  #status-bar {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Stats row */
+  #stats-row {
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .stat-card.green::after { background: var(--accent); }
+  .stat-card.yellow::after { background: var(--accent2); }
+  .stat-card.blue::after { background: var(--accent3); }
+  .stat-card.red::after { background: var(--danger); }
+
+  .stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-card.green .stat-value { color: var(--accent); }
+  .stat-card.yellow .stat-value { color: var(--accent2); }
+  .stat-card.blue .stat-value { color: var(--accent3); }
+  .stat-card.red .stat-value { color: var(--danger); }
+
+  .stat-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* Main content area */
+  #analysis-area {
+    display: none;
+    gap: 20px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface2);
+  }
+
+  .panel-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .dot.yellow { background: var(--accent2); }
+  .dot.red { background: var(--danger); }
+  .dot.blue { background: var(--accent3); }
+
+  .panel-body { padding: 20px; }
+
+
+  /* Contacts table */
+  .contacts-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .contacts-table th {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .contacts-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(42,46,44,0.5);
+    vertical-align: top;
+  }
+
+  .contacts-table tr:hover td { background: var(--surface2); }
+
+  .contact-name { font-weight: 500; color: var(--text); }
+  .contact-org { color: var(--text-muted); font-size: 12px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+  .badge-overdue { background: rgba(245,160,160,0.15); color: var(--danger); border: 1px solid rgba(245,160,160,0.3); }
+  .badge-today { background: rgba(245,230,160,0.15); color: var(--accent2); border: 1px solid rgba(245,230,160,0.3); }
+  .badge-upcoming { background: rgba(184,245,160,0.15); color: var(--accent); border: 1px solid rgba(184,245,160,0.3); }
+  .badge-none { background: rgba(122,138,124,0.15); color: var(--text-muted); border: 1px solid rgba(122,138,124,0.2); }
+
+  /* Streaming cursor */
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 16px;
+    background: var(--accent);
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .error-msg {
+    background: rgba(245,160,160,0.1);
+    border: 1px solid rgba(245,160,160,0.3);
+    border-radius: 4px;
+    padding: 12px 16px;
+    color: var(--danger);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  /* Action items list */
+  .action-list { list-style: none; }
+  .action-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(42,46,44,0.5);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .action-list li:last-child { border-bottom: none; }
+  .action-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    background: rgba(184,245,160,0.1);
+    border: 1px solid rgba(184,245,160,0.2);
+    border-radius: 2px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+
+  footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>CRM <span>Co-Pilot</span></h1>
+    <span class="tag">OnePageCRM + Outlook</span>
+  </header>
+
+  <div class="config-bar">
+    <label>User ID</label>
+    <input type="text" id="user-id" value="695eb680b6d904ef43a983c7" placeholder="Your User ID" style="max-width:240px">
+    <label>API Key</label>
+    <input type="password" id="api-key" value="179PGCCQMiOzTG7pgP7lZW7JVBl6Ppnsx4ZQ1vNb1Cw=" placeholder="Your API Key">
+    <button class="btn btn-primary" id="run-btn" onclick="runAnalysis()">▶ Run Analysis</button>
+    <button class="btn btn-secondary" id="ms-btn" onclick="msSignIn()" title="Sign in to Microsoft to enable email intelligence">📧 Connect Outlook</button>
+    <button class="btn btn-secondary" onclick="refreshEmailCache()" title="Clear email cache and re-fetch from Outlook">↻ Refresh Email</button>
+  </div>
+  <div id="ms-status" style="display:none;font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);padding:6px 0 0 4px"></div>
+
+  <div id="status-bar" style="display:none">
+    <div class="spinner"></div>
+    <span id="status-text">Connecting to OnePageCRM...</span>
+  </div>
+
+  <div id="error-area"></div>
+
+  <div id="stats-row" style="display:none; display:grid">
+    <div class="stat-card green">
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-label">Total Contacts</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-value" id="stat-overdue">—</div>
+      <div class="stat-label">Overdue</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-value" id="stat-today">—</div>
+      <div class="stat-label">Due Today</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-value" id="stat-upcoming">—</div>
+      <div class="stat-label">Upcoming</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-value" id="stat-waiting">—</div>
+      <div class="stat-label">Waiting For</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-value" id="stat-no-action">—</div>
+      <div class="stat-label">No Action Set</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-value" id="stat-deals">—</div>
+      <div class="stat-label">Open Deals</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-value" id="stat-attention">—</div>
+      <div class="stat-label">Needs Attention</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-value" id="stat-exceptions">—</div>
+      <div class="stat-label">Cadence Exceptions</div>
+    </div>
+  </div>
+
+  <div id="analysis-area" style="display:none">
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><div class="dot yellow"></div> ⚡ Needs Attention</div>
+      </div>
+      <div class="panel-body">
+        <div id="tab-attention"><div class="empty-state">⏳ Loading email data...</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><div class="dot blue"></div> ⏰ Cadence Exceptions</div>
+      </div>
+      <div class="panel-body">
+        <div id="tab-exceptions"><div class="empty-state">⏳ Loading cadence data...</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <span>CRM Co-Pilot — powered by Claude</span>
+    <span id="last-run">Not yet run</span>
+  </footer>
+
+</div>
+
+<script>
+let allContacts = [];
+let allDeals = [];
+let currentUserId = '';
+
+// Microsoft Graph
+const MS_CLIENT_ID = 'd947a59a-49eb-4515-9091-dae953bc376f';
+const MS_TENANT_ID = '9fdb10bb-d595-4217-88ce-48136cea284f';
+const MS_REDIRECT_URI = 'http://localhost';
+const MS_SCOPES = 'Mail.Read User.Read';
+let msAccessToken = null;
+
+// Email cache
+const CACHE_KEY = 'crm_email_cache_v2';  // v2: includes sent items for correct direction detection
+const CACHE_MAX_AGE_AUTO = 5 * 60 * 1000;    // 5 min — auto-refresh if older
+let emailCache = null; // { emails: [], fetchedAt: timestamp, myEmail: '' }
+
+function loadEmailCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) emailCache = JSON.parse(raw);
+  } catch(e) { emailCache = null; }
+  return emailCache;
+}
+
+function saveEmailCache(emails, myEmail) {
+  emailCache = { emails, myEmail, fetchedAt: Date.now() };
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(emailCache)); } catch(e) {
+    console.warn('Email cache too large for localStorage, trimming...');
+    // Trim to most recent 300 if storage full
+    emailCache.emails = emails.slice(0, 300);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(emailCache)); } catch(e2) {}
+  }
+}
+
+function cacheAgeString(fetchedAt) {
+  const mins = Math.round((Date.now() - fetchedAt) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ago`;
+}
+
+function msSaveAuth(token, email, expiresIn) {
+  const expiry = Date.now() + (expiresIn - 60) * 1000; // 60s buffer
+  localStorage.setItem('ms_token', token);
+  localStorage.setItem('ms_email', email);
+  localStorage.setItem('ms_token_expiry', expiry.toString());
+}
+
+function msLoadAuth() {
+  const token = localStorage.getItem('ms_token');
+  const email = localStorage.getItem('ms_email');
+  const expiry = parseInt(localStorage.getItem('ms_token_expiry') || '0');
+  if (token && Date.now() < expiry) return { token, email };
+  return null;
+}
+
+function msSetConnectedUI(email) {
+  document.getElementById('ms-status').style.display = 'block';
+  document.getElementById('ms-status').innerHTML = `<span style="color:var(--accent)">✓ Outlook connected: ${email}</span>`;
+  document.getElementById('ms-btn').textContent = '✓ Outlook Connected';
+  document.getElementById('ms-btn').style.color = 'var(--accent)';
+}
+
+function generateCodeVerifier() {
+  const a = new Uint8Array(32);
+  crypto.getRandomValues(a);
+  return btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function generateCodeChallenge(v) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  return btoa(String.fromCharCode(...new Uint8Array(d))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function msSignIn() {
+  const verifier = generateCodeVerifier();
+  const challenge = await generateCodeChallenge(verifier);
+  sessionStorage.setItem('pkce_verifier', verifier);
+
+  const params = new URLSearchParams({
+    client_id: MS_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: MS_REDIRECT_URI,
+    scope: MS_SCOPES,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    response_mode: 'query'
+  });
+
+  const authUrl = `https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+  window.open(authUrl, 'ms-auth', 'width=500,height=650,left=200,top=100');
+
+  const statusEl = document.getElementById('ms-status');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = `
+    <span style="color:var(--accent2)">After signing in, copy the full URL from the popup address bar and paste here:</span><br>
+    <input id="ms-redirect-url" type="text" placeholder="http://localhost/?code=..."
+      style="width:500px;padding:5px 8px;margin-top:4px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:3px;font-family:'DM Mono',monospace;font-size:11px">
+    <button class="btn btn-secondary" onclick="msExchangeCode()" style="margin-left:6px;font-size:10px;padding:5px 10px">→ Connect</button>
+  `;
+}
+
+async function msExchangeCode() {
+  const urlStr = document.getElementById('ms-redirect-url').value.trim();
+  let code;
+  try { code = new URL(urlStr).searchParams.get('code'); } catch(e) {}
+  if (!code) { document.getElementById('ms-status').innerHTML = '<span style="color:var(--danger)">No code found in URL — try again.</span>'; return; }
+
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  const body = new URLSearchParams({
+    client_id: MS_CLIENT_ID,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: MS_REDIRECT_URI,
+    code_verifier: verifier
+  });
+
+  try {
+    const res = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+    const json = await res.json();
+    if (json.access_token) {
+      msAccessToken = json.access_token;
+      const me = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail', {
+        headers: { 'Authorization': 'Bearer ' + msAccessToken }
+      }).then(r => r.json());
+      msSaveAuth(json.access_token, me.mail, json.expires_in || 3600);
+      msSetConnectedUI(me.mail);
+    } else {
+      document.getElementById('ms-status').innerHTML = `<span style="color:var(--danger)">Auth failed: ${json.error_description || json.error}</span>`;
+    }
+  } catch(e) {
+    document.getElementById('ms-status').innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  }
+}
+
+// Restore token and cache on load
+window.addEventListener('load', () => {
+  const auth = msLoadAuth();
+  if (auth) {
+    msAccessToken = auth.token;
+    msSetConnectedUI(auth.email);
+  } else {
+    const expiry = parseInt(localStorage.getItem('ms_token_expiry') || '0');
+    if (expiry && Date.now() > expiry) {
+      document.getElementById('ms-status').style.display = 'block';
+      document.getElementById('ms-status').innerHTML = `<span style="color:var(--accent2)">⚠ Outlook session expired — click Connect Outlook to re-authenticate.</span>`;
+    }
+  }
+  loadEmailCache();
+});
+
+function showStatus(msg) {
+  const bar = document.getElementById('status-bar');
+  bar.style.display = 'flex';
+  document.getElementById('status-text').textContent = msg;
+}
+
+function hideStatus() {
+  document.getElementById('status-bar').style.display = 'none';
+}
+
+function showError(msg) {
+  document.getElementById('error-area').innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+}
+
+function clearError() {
+  document.getElementById('error-area').innerHTML = '';
+}
+
+
+async function fetchAll(url, userId, apiKey) {
+  const headers = {
+    'Authorization': 'Basic ' + btoa(userId + ':' + apiKey)
+  };
+  let allData = [];
+  let page = 1;
+  while (true) {
+    const res = await fetch(url + (url.includes('?') ? '&' : '?') + `page=${page}&per_page=100`, { headers });
+    if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+    const json = await res.json();
+    // OnePageCRM wraps in data key
+    const items = json.data || json.contacts || json.deals || [];
+    if (items.length === 0) break;
+    allData = allData.concat(items);
+    if (items.length < 100) break;
+    page++;
+  }
+  return allData;
+}
+
+function refreshEmailCache() {
+  localStorage.removeItem(CACHE_KEY);
+  emailCache = null;
+  if (!msAccessToken) {
+    document.getElementById('ms-status').style.display = 'block';
+    document.getElementById('ms-status').innerHTML = '<span style="color:var(--accent2)">Connect Outlook first, then refresh.</span>';
+    return;
+  }
+  if (!allContacts.length) {
+    document.getElementById('ms-status').style.display = 'block';
+    document.getElementById('ms-status').innerHTML = '<span style="color:var(--accent2)">Run Analysis first, then refresh email.</span>';
+    return;
+  }
+  document.getElementById('tab-attention').innerHTML = '<div class="empty-state">⏳ Re-fetching emails from Outlook...</div>';
+  document.getElementById('tab-exceptions').innerHTML = '<div class="empty-state">⏳ Re-fetching...</div>';
+  const BASE = 'https://app.onepagecrm.com/api/v3';
+  const px = (url) => 'https://corsproxy.io/?' + encodeURIComponent(url);
+  fetchEmailIntelligence(allContacts.filter(c => c.status !== 'Inactive'), px, BASE);
+}
+
+
+async function runAnalysis() {
+  clearError();
+  const userId = document.getElementById('user-id').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  if (!userId || !apiKey) return showError('Please enter your OnePageCRM User ID and API Key.');
+
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('stats-row').style.display = 'none';
+  document.getElementById('analysis-area').style.display = 'none';
+  currentUserId = userId;
+
+  const BASE = 'https://app.onepagecrm.com/api/v3';
+  const headers = { 'Authorization': 'Basic ' + btoa(userId + ':' + apiKey) };
+  const px = (url) => 'https://corsproxy.io/?' + encodeURIComponent(url);
+
+  try {
+    // Fetch via action_stream (includes next_action) then supplement with contacts endpoint
+    showStatus('Fetching contacts & actions from OnePageCRM...');
+    let contacts = [];
+    let page = 1;
+    while (true) {
+      const url = `${BASE}/action_stream.json?page=${page}&per_page=100`;
+      const res = await fetch(px(url), { headers });
+      if (!res.ok) throw new Error(`API error ${res.status} — check credentials`);
+      const json = await res.json();
+      // data.contacts is an array of {contact: {...}, next_actions: [...]}
+      if (!json.data || !Array.isArray(json.data.contacts)) {
+        console.log('Unexpected:', JSON.stringify(json).slice(0,800));
+        throw new Error('Unexpected response: ' + JSON.stringify(Object.keys(json.data || json)));
+      }
+      const raw = json.data.contacts;
+      if (raw.length === 0) break;
+      const batch = raw.map(item => {
+        const c = item.contact || item;
+        // next_actions is an array on the wrapper object, not on contact itself
+        const actions = item.next_actions || item.actions || [];
+        c.next_action = actions.length > 0 ? actions[0] : (item.next_action || null);
+        return c;
+      });
+      contacts = contacts.concat(batch);
+      if (raw.length < 100) break;
+      page++;
+    }
+    // Supplement with contacts endpoint to catch any not in action stream
+    showStatus('Fetching remaining contacts...');
+    try {
+      let page2 = 1;
+      while (true) {
+        const res2 = await fetch(px(`${BASE}/contacts.json?page=${page2}&per_page=100`), { headers });
+        if (!res2.ok) break;
+        const json2 = await res2.json();
+        let raw2 = [];
+        if (json2.data && Array.isArray(json2.data.contacts)) raw2 = json2.data.contacts;
+        else if (Array.isArray(json2.data)) raw2 = json2.data;
+        const batch2 = raw2.map(d => d.contact || d);
+        if (batch2.length === 0) break;
+        const existingIds = new Set(contacts.map(c => c.id));
+        batch2.forEach(c => { if (!existingIds.has(c.id)) contacts.push(c); });
+        if (batch2.length < 100) break;
+        page2++;
+      }
+    } catch(e) {}
+    allContacts = contacts;
+
+    // Fetch deals
+    showStatus('Fetching deals...');
+    let deals = [];
+    try {
+      const dres = await fetch(px(`${BASE}/deals.json?per_page=100`), { headers });
+      if (dres.ok) {
+        const djson = await dres.json();
+        let drawDeals = [];
+        if (Array.isArray(djson.data)) drawDeals = djson.data;
+        else if (djson.data && Array.isArray(djson.data.deals)) drawDeals = djson.data.deals;
+        else if (Array.isArray(djson.deals)) drawDeals = djson.deals;
+        deals = drawDeals.map(d => d.deal || d);
+      }
+    } catch(e) {}
+    allDeals = deals;
+
+    showStatus(`Loaded ${contacts.length} contacts. Analyzing...`);
+
+
+    // Filter out Inactive contacts entirely — they don't appear in any tab
+    const activeContacts = contacts.filter(c => c.status !== 'Inactive');
+
+    // Process contacts with full OnePageCRM action model
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const myUserId = userId; // logged-in user
+
+    const overdue    = [];  // dated, assigned to me, past due
+    const dueToday   = [];  // dated, assigned to me, due today
+    const upcoming   = [];  // dated, assigned to me, future
+    const waiting    = [];  // status === 'waiting' (Waiting For)
+    const queued     = [];  // no date, assigned to me (queued/undated)
+    const assignedOther = []; // next action assigned to someone else
+    const noAction   = [];  // no next_action at all
+
+
+    activeContacts.forEach(c => {
+      const na = c.next_action;
+
+      // No next action — catches null, undefined, and empty object {}
+      if (!na || (!na.text && !na.date && !na.id)) {
+        noAction.push(c);
+        return;
+      }
+
+
+      // Waiting For — check status field
+      const isWaiting = na.status === 'waiting';
+      if (isWaiting) {
+        waiting.push(c);
+        return;
+      }
+
+      // Assigned to another user
+      const assignee = na.assignee_id || na.user_id;
+      if (assignee && assignee !== myUserId) {
+        assignedOther.push({ ...c, _assignee: assignee });
+        return;
+      }
+
+      // No date = queued (treat null, "", "0000-00-00" all as no date)
+      const hasDate = na.date && na.date !== '0000-00-00' && na.date !== '0';
+      if (!hasDate) {
+        queued.push(c);
+        return;
+      }
+
+      // Dated action — categorize by date
+      const actionDate = new Date(na.date);
+      actionDate.setHours(0,0,0,0);
+      const diff = Math.round((actionDate - today) / (1000*60*60*24));
+      if (diff < 0)      overdue.push({ ...c, _daysOverdue: Math.abs(diff) });
+      else if (diff === 0) dueToday.push(c);
+      else                upcoming.push({ ...c, _daysUntil: diff });
+    });
+
+    // Update stats
+    document.getElementById('stat-total').textContent = activeContacts.length;
+    document.getElementById('stat-overdue').textContent = overdue.length;
+    document.getElementById('stat-today').textContent = dueToday.length;
+    document.getElementById('stat-upcoming').textContent = upcoming.length;
+    document.getElementById('stat-waiting').textContent = waiting.length;
+    document.getElementById('stat-no-action').textContent = noAction.length;
+    document.getElementById('stat-deals').textContent = deals.filter(d => d.status !== 'won' && d.status !== 'lost').length;
+    document.getElementById('stat-attention').textContent = '…';
+    document.getElementById('stats-row').style.display = 'grid';
+
+    // Render contact tables
+
+    document.getElementById('analysis-area').style.display = 'block';
+
+    hideStatus();
+    document.getElementById('last-run').textContent = 'Last run: ' + new Date().toLocaleTimeString();
+    document.getElementById('run-btn').disabled = false;
+
+    // Kick off activity gap detection in background (non-blocking)
+    fetchEmailIntelligence(activeContacts, px, BASE);
+    return;
+
+    } catch(err) {
+    hideStatus();
+    showError(err.message);
+    console.error(err);
+  } finally {
+    document.getElementById('run-btn').disabled = false;
+  }
+}
+
+
+const CADENCE_FIELD_ID = '699669362480755968b7997e';
+const CADENCE_DEFAULT = 6; // months
+
+function getContactCadence(contact) {
+  const field = (contact.custom_fields || []).find(f => f.custom_field?.id === CADENCE_FIELD_ID);
+  return field?.value || CADENCE_DEFAULT;
+}
+
+function getContactLastTouch(contact, lastTouchMap) {
+  // lastTouchMap: email address → { date, direction }
+  const emails = (contact.emails || []).map(e => e.value?.toLowerCase()).filter(Boolean);
+  let latest = null;
+  emails.forEach(addr => {
+    const touch = lastTouchMap[addr];
+    if (touch && (!latest || touch.date > latest.date)) latest = touch;
+  });
+  return latest; // { date, direction: 'in'|'out', subject, fromName }
+}
+
+async function fetchEmailIntelligence(contacts, px, BASE) {
+  const attentionEl = document.getElementById('tab-attention');
+  const exceptionsEl = document.getElementById('tab-exceptions');
+
+  if (!msAccessToken) {
+    // If we have a cache, show it even without a token
+    if (emailCache) {
+      renderEmailIntelligence(emailCache.emails, emailCache.myEmail, contacts, true);
+      return;
+    }
+    const msg = `<div class="empty-state">📧 Connect Outlook to enable email intelligence.<br>
+      <span style="color:var(--text-muted);font-size:12px">Click "📧 Connect Outlook" above, then re-run.</span></div>`;
+    attentionEl.innerHTML = msg;
+    exceptionsEl.innerHTML = msg;
+    document.getElementById('stat-attention').textContent = '—';
+    document.getElementById('stat-exceptions').textContent = '—';
+    return;
+  }
+
+  try {
+    const myEmail = (localStorage.getItem('ms_email') || '').toLowerCase();
+    const fields = 'id,subject,from,toRecipients,receivedDateTime,categories,conversationId,isDraft';
+    const cache = emailCache;
+    const cacheAge = cache ? Date.now() - cache.fetchedAt : Infinity;
+    const needsRefresh = cacheAge > CACHE_MAX_AGE_AUTO;
+
+    // Show cached data immediately if available
+    if (cache && cache.emails.length) {
+      const ageStr = cacheAgeString(cache.fetchedAt);
+      attentionEl.innerHTML = `<div class="empty-state" style="color:var(--text-muted)">⏳ ${needsRefresh ? 'Refreshing' : 'Using cached'} data (last fetched ${ageStr})...</div>`;
+      exceptionsEl.innerHTML = `<div class="empty-state" style="color:var(--text-muted)">⏳ ${needsRefresh ? 'Refreshing' : 'Building'} cadence map...</div>`;
+      if (!needsRefresh) {
+        renderEmailIntelligence(cache.emails, myEmail, contacts, false);
+        return;
+      }
+    } else {
+      attentionEl.innerHTML = '<div class="empty-state">⏳ Scanning Outlook for OnePageCRM emails (90 days)...</div>';
+      exceptionsEl.innerHTML = '<div class="empty-state">⏳ Building cadence map...</div>';
+    }
+
+    // Determine fetch window — incremental for Inbox, always full 90d for SentItems
+    // (sent items are few enough that full fetch is fast, and we can't miss any replies)
+    const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    let sinceInbox = since90d;
+    let existingEmails = [];
+    if (cache && cache.emails.length && needsRefresh) {
+      // Inbox: only fetch since last cache (with 1 hour overlap)
+      sinceInbox = new Date(cache.fetchedAt - 60 * 60 * 1000).toISOString();
+      existingEmails = cache.emails;
+      attentionEl.innerHTML = `<div class="empty-state" style="color:var(--text-muted)">⏳ Refreshing emails...</div>`;
+    }
+
+    // Fetch from Graph — inbox AND sent items to correctly detect who replied last
+    const graphHeaders = { 'Authorization': 'Bearer ' + msAccessToken };
+    const fetchFolder = async (folderPath, isSent) => {
+      let results = [];
+      let totalFetched = 0;
+      const since = isSent ? since90d : sinceInbox;
+      let link = `https://graph.microsoft.com/v1.0/me/${folderPath}/messages?$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}&$select=${fields}&$orderby=receivedDateTime desc&$top=100`;
+      while (link && results.length < 500) {
+        const res = await fetch(link, { headers: graphHeaders });
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('Graph 401: Outlook token expired — click Connect Outlook to re-authenticate.');
+          console.warn(`Graph ${folderPath} ${res.status}`);
+          break;
+        }
+        const json = await res.json();
+        const all = json.value || [];
+        totalFetched += all.length;
+        const batch = all.filter(e =>
+          !e.isDraft && (e.categories || []).some(c => c === 'OnePageCRM')
+        );
+        if (isSent) batch.forEach(e => { e._sent = true; });
+        results = results.concat(batch);
+        link = json['@odata.nextLink'] || null;
+      }
+      console.log(`Graph ${folderPath}: ${results.length} OnePageCRM-tagged of ${totalFetched} total`);
+      return results;
+    };
+
+    const [inboxEmails, sentEmails] = await Promise.all([
+      fetchFolder('mailFolders/Inbox', false),
+      fetchFolder('mailFolders/SentItems', true)
+    ]);
+    let newEmails = [...inboxEmails, ...sentEmails];
+
+    // Merge with existing cache, deduplicate by id, trim to 90 days
+    const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const allById = {};
+    [...existingEmails, ...newEmails].forEach(e => { allById[e.id] = e; });
+    const allEmails = Object.values(allById)
+      .filter(e => new Date(e.receivedDateTime).getTime() > cutoff)
+      .sort((a, b) => new Date(b.receivedDateTime) - new Date(a.receivedDateTime));
+
+    console.log(`Graph: ${newEmails.length} new + ${existingEmails.length} cached = ${allEmails.length} total OnePageCRM emails`);
+    // Only save cache if fetch returned something — never overwrite good data with empty results
+    if (allEmails.length > 0) saveEmailCache(allEmails, myEmail);
+    renderEmailIntelligence(allEmails, myEmail, contacts, false);
+
+  } catch(e) {
+    console.error('Email intelligence error:', e);
+    const is401 = e.message.includes('401');
+    // On token expiry, show prominent re-auth message and use cache if available
+    if (is401) {
+      document.getElementById('ms-status').style.display = 'block';
+      document.getElementById('ms-status').innerHTML = '<span style="color:var(--danger)">⚠ Outlook token expired — click Connect Outlook to re-authenticate.</span>';
+    }
+    if (emailCache && emailCache.emails.length) {
+      renderEmailIntelligence(emailCache.emails, emailCache.myEmail, contacts, true);
+    } else {
+      const errMsg = `<div class="empty-state">⚠ ${e.message}</div>`;
+      document.getElementById('tab-attention').innerHTML = errMsg;
+      document.getElementById('tab-exceptions').innerHTML = errMsg;
+      document.getElementById('stat-attention').textContent = '?';
+      document.getElementById('stat-exceptions').textContent = '?';
+    }
+  }
+}
+
+function renderEmailIntelligence(allEmails, myEmail, contacts, fromCache) {
+  const attentionEl = document.getElementById('tab-attention');
+  const exceptionsEl = document.getElementById('tab-exceptions');
+  const now = Date.now();
+  const cacheNote = fromCache && emailCache
+    ? `<div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;margin-bottom:8px">📦 Showing cached data from ${cacheAgeString(emailCache.fetchedAt)} — run analysis to refresh</div>`
+    : '';
+    // and also track last-per-conversation for needs-attention
+    const lastTouchMap = {}; // addr → { date, direction, subject, fromName }
+    const convMap = {};      // conversationId → last message
+
+    allEmails.forEach(e => {
+      const fromAddr = (e.from?.emailAddress?.address || '').toLowerCase();
+      const fromName = e.from?.emailAddress?.name || fromAddr;
+      // _sent = came from SentItems folder = outbound regardless of from address
+      const isInbound = e._sent ? false : (fromAddr !== myEmail);
+      const date = new Date(e.receivedDateTime);
+      const direction = isInbound ? 'in' : 'out';
+
+      // Track per-conversation last message
+      const cid = e.conversationId;
+      if (!convMap[cid] || date > new Date(convMap[cid].receivedDateTime)) {
+        convMap[cid] = e;
+      }
+
+      // Update lastTouchMap — inbound: contact is sender; outbound: contacts are recipients
+      const addrs = new Set();
+      if (isInbound) {
+        addrs.add(fromAddr);
+      } else {
+        (e.toRecipients || []).forEach(r => {
+          const a = (r.emailAddress?.address || '').toLowerCase();
+          if (a && a !== myEmail) addrs.add(a);
+        });
+      }
+
+      addrs.forEach(addr => {
+        if (!lastTouchMap[addr] || date > lastTouchMap[addr].date) {
+          lastTouchMap[addr] = { date, direction, subject: e.subject || '(no subject)', fromName: isInbound ? fromName : 'You' };
+        }
+      });
+    });
+
+    // Build email → contact lookup
+    const emailToContact = {};
+    contacts.forEach(c => {
+      (c.emails || []).forEach(e => {
+        if (e.value) emailToContact[e.value.toLowerCase()] = c;
+      });
+    });
+
+    // ── NEEDS ATTENTION ──────────────────────────────────────────
+    // Conversations where last message was inbound, matched to a CRM contact
+    const needsReply = [];
+
+    Object.values(convMap).forEach(e => {
+      const fromAddr = (e.from?.emailAddress?.address || '').toLowerCase();
+      const fromName = e.from?.emailAddress?.name || fromAddr;
+      const isInbound = e._sent ? false : (fromAddr !== myEmail);
+      if (!isInbound) return;
+
+      let contact = emailToContact[fromAddr];
+      if (!contact) {
+        (e.toRecipients || []).forEach(r => {
+          const a = (r.emailAddress?.address || '').toLowerCase();
+          if (!contact && a !== myEmail) contact = emailToContact[a];
+        });
+      }
+      if (!contact) return;
+
+      // Suppress if contact has a future-dated next action
+      const na = contact.next_action;
+      const naDate = na?.date && na.date !== '0000-00-00' ? new Date(na.date) : null;
+      if (naDate && naDate > new Date()) return;
+
+      // Suppress if lastTouchMap shows most recent contact with this person was outbound
+      // This catches new outbound threads that aren't replies to the flagged conversation
+      const contactAddrs = (contact.emails || []).map(e => e.value?.toLowerCase()).filter(Boolean);
+      const lastTouch = contactAddrs.map(a => lastTouchMap[a]).filter(Boolean)
+        .sort((a, b) => b.date - a.date)[0];
+      if (lastTouch && lastTouch.direction === 'out') return;
+
+      const receivedDate = new Date(e.receivedDateTime);
+      const ageDays = Math.round((now - receivedDate.getTime()) / (1000 * 60 * 60 * 24));
+      needsReply.push({ contact, subject: e.subject || '(no subject)', fromName, fromAddr, receivedDate, ageDays });
+    });
+
+    // Deduplicate by contact, keep most recent
+    const byContact = {};
+    needsReply.forEach(item => {
+      const cid = item.contact.id;
+      if (!byContact[cid] || item.receivedDate > byContact[cid].receivedDate) byContact[cid] = item;
+    });
+    const attentionList = Object.values(byContact).sort((a, b) => b.ageDays - a.ageDays);
+    document.getElementById('stat-attention').textContent = attentionList.length;
+
+    if (!attentionList.length) {
+      attentionEl.innerHTML = cacheNote + '<div class="empty-state">✓ No unanswered inbound emails from CRM contacts.</div>';
+    } else {
+      const rows = attentionList.map(item => {
+        const c = item.contact;
+        const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)';
+        const org = c.company_name || '';
+        const url = `https://app.onepagecrm.com/show_contact/${c.id}`;
+        const ageLabel = item.ageDays === 0 ? 'today' : item.ageDays === 1 ? 'yesterday' : `${item.ageDays}d ago`;
+        const ageColor = item.ageDays >= 7 ? 'var(--danger)' : item.ageDays >= 3 ? 'var(--accent2)' : 'var(--accent)';
+        const reason = `Unanswered email — ${ageLabel}`;
+        const na = c.next_action;
+        const naHint = na?.text ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Next: ${na.text}${na.date && na.date !== '0000-00-00' ? ' — ' + na.date : ''}</div>` : '';
+        return `<tr>
+          <td><a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:500">${name}</a><div style="color:var(--text-muted);font-size:11px">${org}</div></td>
+          <td style="color:${ageColor};font-size:12px;font-weight:500">${reason}${naHint}</td>
+          <td style="color:var(--text);font-size:12px">${item.subject}</td>
+          <td style="color:var(--text-muted);font-size:11px">${item.fromName}</td>
+        </tr>`;
+      }).join('');
+      attentionEl.innerHTML = cacheNote + `
+        <div style="margin-bottom:12px;font-size:12px;color:var(--text-muted);font-family:'DM Mono',monospace">
+          Contacts whose last email was inbound — awaiting your reply.
+        </div>
+        <table class="contacts-table"><thead><tr>
+          <th>Contact</th><th>Reason</th><th>Subject</th><th>From</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    // ── CADENCE EXCEPTIONS ───────────────────────────────────────
+    const overdue = [];    // cadence window expired, no real plan
+    const stale = [];      // recently touched but next action predates the touch
+    const noCadence = [];  // cadence field not explicitly set (using default)
+
+    contacts.forEach(c => {
+      const hasExplicitCadence = (c.custom_fields || []).some(f => f.custom_field?.id === CADENCE_FIELD_ID && f.value);
+      const cadenceMonths = getContactCadence(c);
+      const lastTouch = getContactLastTouch(c, lastTouchMap);
+      const na = c.next_action;
+
+      if (!hasExplicitCadence) noCadence.push(c);
+
+      const cadenceMs = cadenceMonths * 30.44 * 24 * 60 * 60 * 1000;
+      const lastTouchDate = lastTouch?.date;
+      const daysSinceTouch = lastTouchDate ? Math.round((now - lastTouchDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+      // Any next action = OPC is already tracking this, don't duplicate
+      // This covers: overdue dated, future dated, waiting for, queued undated
+      const hasAnyAction = na && (na.id || na.text || na.date);
+      if (hasAnyAction) return;
+
+      const touchedRecentlyDays = 14;
+
+      // Stale: touched within 14 days AND has any next action (queued or dated) — action may be outdated
+      if (lastTouchDate && (now - lastTouchDate.getTime()) < touchedRecentlyDays * 24 * 60 * 60 * 1000) {
+        stale.push({ ...c, _lastTouch: lastTouch, _daysSinceTouch: daysSinceTouch, _cadenceMonths: cadenceMonths, _explicit: hasExplicitCadence });
+        return;
+      }
+
+      // Overdue cadence: no touch within cadence window
+      // Queued (undated) action does NOT suppress this — it's a holding pen, not a plan
+      // Contacts with no email history at all are lower urgency — flag but note it
+      if (!lastTouchDate || (now - lastTouchDate.getTime()) > cadenceMs) {
+        const reason = !lastTouchDate
+          ? `No email history — cadence: ${cadenceMonths}mo`
+          : `No contact in ${daysSinceTouch}d — cadence: ${cadenceMonths}mo`;
+        overdue.push({ ...c, _lastTouch: lastTouch, _daysSinceTouch: daysSinceTouch, _cadenceMonths: cadenceMonths, _explicit: hasExplicitCadence, _reason: reason });
+      }
+    });
+
+    const totalExceptions = overdue.length + stale.length;
+    document.getElementById('stat-exceptions').textContent = totalExceptions;
+
+    const renderExceptionRows = (list, type) => list.map(c => {
+      const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)';
+      const org = c.company_name || '';
+      const url = `https://app.onepagecrm.com/show_contact/${c.id}`;
+
+      if (type === 'overdue') {
+        const reasonColor = !c._lastTouch ? 'var(--danger)' : 'var(--accent2)';
+        const lastTouchDetail = c._lastTouch
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Last: ${c._lastTouch.direction === 'in' ? '← ' : '→ '}${c._lastTouch.subject}</div>`
+          : '';
+        const na = c.next_action;
+        const hasDate = na?.date && na.date !== '0000-00-00';
+        const naHint = (na?.text && !hasDate) ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Pending (no date): "${na.text}"</div>` : '';
+        return `<tr>
+          <td><a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:500">${name}</a><div style="color:var(--text-muted);font-size:11px">${org}</div></td>
+          <td style="color:${reasonColor};font-size:12px">${c._reason}${lastTouchDetail}${naHint}</td>
+        </tr>`;
+      } else {
+        // stale
+        const naText = c.next_action?.text || 'action set';
+        const naDate = c.next_action?.date && c.next_action.date !== '0000-00-00' ? ' — ' + c.next_action.date : '';
+        const touchLabel = c._daysSinceTouch === 0 ? 'today' : c._daysSinceTouch + 'd ago';
+        const reason = `Touched ${touchLabel} but action predates contact`;
+        const detail = `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">"${naText}"${naDate} — last: ${c._lastTouch?.direction === 'in' ? '← ' : '→ '}${c._lastTouch?.subject || ''}</div>`;
+        return `<tr>
+          <td><a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:500">${name}</a><div style="color:var(--text-muted);font-size:11px">${org}</div></td>
+          <td style="color:var(--accent2);font-size:12px">${reason}${detail}</td>
+        </tr>`;
+      }
+    }).join('');
+
+    let exceptionsHTML = '';
+
+    if (overdue.length) {
+      exceptionsHTML += `
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--danger);margin:16px 0 8px;text-transform:uppercase">
+          ▸ Overdue — no contact within cadence window (${overdue.length})
+        </div>
+        <table class="contacts-table"><thead><tr>
+          <th>Contact</th><th>Reason</th>
+        </tr></thead><tbody>${renderExceptionRows(overdue, 'overdue')}</tbody></table>`;
+    }
+
+    if (stale.length) {
+      exceptionsHTML += `
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--accent2);margin:24px 0 8px;text-transform:uppercase">
+          ▸ Stale Action — recently touched, next action may need updating (${stale.length})
+        </div>
+        <table class="contacts-table"><thead><tr>
+          <th>Contact</th><th>Reason</th>
+        </tr></thead><tbody>${renderExceptionRows(stale, 'stale')}</tbody></table>`;
+    }
+
+    if (noCadence.length) {
+      const ncRows = noCadence.map(c => {
+        const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '(no name)';
+        const org = c.company_name || '';
+        const url = `https://app.onepagecrm.com/show_contact/${c.id}`;
+        return `<tr>
+          <td><a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none">${name}</a></td>
+          <td style="color:var(--text-muted);font-size:12px">${org}</td>
+          <td style="color:var(--text-muted);font-size:11px">using ${CADENCE_DEFAULT}mo default</td>
+        </tr>`;
+      }).join('');
+      exceptionsHTML += `
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--text-muted);margin:24px 0 8px;text-transform:uppercase">
+          ▸ No Cadence Set — using ${CADENCE_DEFAULT}mo default (${noCadence.length})
+        </div>
+        <table class="contacts-table"><thead><tr>
+          <th>Contact</th><th>Organization</th><th>Cadence</th>
+        </tr></thead><tbody>${ncRows}</tbody></table>`;
+    }
+
+    if (!exceptionsHTML) {
+      exceptionsEl.innerHTML = cacheNote + '<div class="empty-state">✓ All contacts within cadence — nothing to flag.</div>';
+    } else {
+      exceptionsEl.innerHTML = cacheNote + `
+        <div style="margin-bottom:12px;font-size:12px;color:var(--text-muted);font-family:'DM Mono',monospace">
+          Contacts where reality has diverged from your contact intention.
+        </div>` + exceptionsHTML;
+    }
+}
+
+
+
+</script>
+</body>
+</html>
