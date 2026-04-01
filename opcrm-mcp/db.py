@@ -188,3 +188,132 @@ def log_sync(conn, source, contacts_synced=0, records_synced=0, error=None):
         INSERT INTO sync_log (source, contacts_synced, records_synced, error)
         VALUES (?, ?, ?, ?)
     """, (source, contacts_synced, records_synced, error))
+
+
+# ── Query functions ────────────────────────────────────────────────────────────
+
+def get_contact_by_id(conn, contact_id):
+    row = conn.execute(
+        "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["tags"] = [
+        r[0] for r in conn.execute(
+            "SELECT tag FROM contact_tags WHERE contact_id = ?", (contact_id,)
+        ).fetchall()
+    ]
+    return result
+
+
+def search_contacts(conn, query):
+    pattern = f"%{query}%"
+    rows = conn.execute("""
+        SELECT * FROM contacts
+        WHERE name LIKE ? OR company LIKE ? OR email LIKE ?
+        ORDER BY name
+    """, (pattern, pattern, pattern)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_contacts_by_tag(conn, tag):
+    rows = conn.execute("""
+        SELECT c.* FROM contacts c
+        JOIN contact_tags t ON t.contact_id = c.id
+        WHERE t.tag = ?
+        ORDER BY c.name
+    """, (tag,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_contacts_by_owner(conn, owner_id):
+    rows = conn.execute(
+        "SELECT * FROM contacts WHERE owner_id = ? ORDER BY name", (owner_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_overdue_contacts(conn):
+    """
+    Returns contacts where last touch across all channels exceeds cadence window,
+    or contacts with no interaction history at all.
+    cadence_months is converted to days using 30.44 days/month.
+    """
+    rows = conn.execute("""
+        WITH last_touch AS (
+            SELECT contact_id, MAX(date) AS last_date FROM (
+                SELECT contact_id, date FROM notes
+                UNION ALL SELECT contact_id, date FROM calls
+                UNION ALL SELECT contact_id, date FROM meetings
+                UNION ALL SELECT contact_id, date FROM emails
+            ) GROUP BY contact_id
+        )
+        SELECT c.id, c.name, c.company, c.owner_id, c.cadence_months,
+               lt.last_date,
+               CAST(julianday('now') - julianday(COALESCE(lt.last_date, '2000-01-01')) AS INTEGER)
+                   AS days_since
+        FROM contacts c
+        LEFT JOIN last_touch lt ON lt.contact_id = c.id
+        WHERE julianday('now') - julianday(COALESCE(lt.last_date, '2000-01-01'))
+              > c.cadence_months * 30.44
+        ORDER BY days_since DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_contact_history(conn, contact_id, limit=50):
+    """Unified timeline of notes, calls, meetings, and emails for a contact."""
+    rows = conn.execute("""
+        SELECT 'note'    AS type, date, text    AS content, NULL AS subject,
+               NULL      AS direction, author_id AS from_address
+        FROM notes WHERE contact_id = ?
+        UNION ALL
+        SELECT 'call'    AS type, date, text    AS content, NULL AS subject,
+               NULL      AS direction, author_id AS from_address
+        FROM calls WHERE contact_id = ?
+        UNION ALL
+        SELECT 'meeting' AS type, date, text    AS content, NULL AS subject,
+               NULL      AS direction, author_id AS from_address
+        FROM meetings WHERE contact_id = ?
+        UNION ALL
+        SELECT 'email'   AS type, date, body_preview AS content, subject,
+               direction, from_address
+        FROM emails WHERE contact_id = ?
+        ORDER BY date DESC
+        LIMIT ?
+    """, (contact_id, contact_id, contact_id, contact_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_recent_emails(conn, contact_id, limit=20):
+    rows = conn.execute("""
+        SELECT * FROM emails WHERE contact_id = ?
+        ORDER BY date DESC LIMIT ?
+    """, (contact_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_notes(conn, contact_id):
+    rows = conn.execute(
+        "SELECT * FROM notes WHERE contact_id = ? ORDER BY date DESC",
+        (contact_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_sync_status(conn):
+    rows = conn.execute("""
+        SELECT source,
+               MAX(last_synced_at) AS last_synced_at,
+               contacts_synced, records_synced, error
+        FROM sync_log GROUP BY source
+    """).fetchall()
+    return {row["source"]: dict(row) for row in rows}
+
+
+def get_all_tags(conn):
+    rows = conn.execute(
+        "SELECT DISTINCT tag FROM contact_tags ORDER BY tag"
+    ).fetchall()
+    return [r[0] for r in rows]
