@@ -18,55 +18,61 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 
 CREATE TABLE IF NOT EXISTS contact_tags (
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     tag TEXT,
-    PRIMARY KEY (contact_id, tag)
+    PRIMARY KEY (contact_id, tag),
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS next_actions (
     id TEXT PRIMARY KEY,
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     text TEXT,
     due_date TEXT,
     assignee_id TEXT,
-    status TEXT
+    status TEXT,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     text TEXT,
     date TEXT,
-    author_id TEXT
+    author_id TEXT,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS calls (
     id TEXT PRIMARY KEY,
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     text TEXT,
     date TEXT,
     author_id TEXT,
-    duration INTEGER
+    duration INTEGER,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS meetings (
     id TEXT PRIMARY KEY,
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     text TEXT,
     date TEXT,
-    author_id TEXT
+    author_id TEXT,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS emails (
     id TEXT PRIMARY KEY,
-    contact_id TEXT,
+    contact_id TEXT NOT NULL,
     subject TEXT,
     body_preview TEXT,
     date TEXT,
     direction TEXT,
     thread_id TEXT,
     from_address TEXT,
-    to_addresses TEXT
+    to_addresses TEXT,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS sync_log (
@@ -77,6 +83,12 @@ CREATE TABLE IF NOT EXISTS sync_log (
     records_synced INTEGER DEFAULT 0,
     error TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_notes_contact_id ON notes(contact_id);
+CREATE INDEX IF NOT EXISTS idx_calls_contact_id ON calls(contact_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_contact_id ON meetings(contact_id);
+CREATE INDEX IF NOT EXISTS idx_emails_contact_id ON emails(contact_id);
+CREATE INDEX IF NOT EXISTS idx_next_actions_contact_id ON next_actions(contact_id);
 """
 
 
@@ -85,6 +97,7 @@ def get_conn(db_path=None):
     path = db_path if db_path is not None else str(DB_PATH)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
