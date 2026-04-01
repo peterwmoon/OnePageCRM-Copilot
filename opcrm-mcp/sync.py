@@ -1,5 +1,4 @@
 import json
-import sqlite3
 from datetime import datetime, timezone
 
 import auth
@@ -143,6 +142,7 @@ def sync_graph(config, conn=None):
     owns_conn = conn is None
     if owns_conn:
         conn = db.get_conn()
+        db.init_db(conn)
 
     try:
         rows = conn.execute("SELECT id, email FROM contacts WHERE email != ''").fetchall()
