@@ -20,7 +20,6 @@ def fetch_emails(token, since_date=None, folder="me/messages"):
         f"{GRAPH_BASE}/{folder}"
         f"?$filter={filter_str}"
         f"&$select={EMAIL_FIELDS}"
-        f"&$orderby=receivedDateTime desc"
         f"&$top=100"
     )
     headers = {"Authorization": f"Bearer {token}"}
