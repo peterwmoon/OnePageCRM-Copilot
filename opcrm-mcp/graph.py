@@ -2,7 +2,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-EMAIL_FIELDS = "id,subject,bodyPreview,receivedDateTime,from,toRecipients,isDraft,threadId"
+EMAIL_FIELDS = "id,subject,bodyPreview,receivedDateTime,from,toRecipients,isDraft,conversationId"
 
 
 def fetch_emails(token, since_date=None, folder="me/messages"):

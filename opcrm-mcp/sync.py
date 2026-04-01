@@ -234,7 +234,7 @@ def sync_graph(config, conn=None):
                 "body_preview": msg.get("bodyPreview", ""),
                 "date": msg.get("receivedDateTime", ""),
                 "direction": direction,
-                "thread_id": msg.get("threadId", ""),
+                "thread_id": msg.get("conversationId", ""),
                 "from_address": from_addr,
                 "to_addresses": json.dumps(to_addrs),
             })
