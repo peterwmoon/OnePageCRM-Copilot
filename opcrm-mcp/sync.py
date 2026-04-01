@@ -180,6 +180,12 @@ def sync_history(config, conn=None):
 
 def sync_graph(config, conn=None):
     """Sync Outlook emails matched to OPCRM contacts. Pass conn for testing."""
+    import time
+    if not (config.get("graph_access_token") and config.get("graph_token_expiry", 0) > time.time() + 60):
+        if not config.get("graph_refresh_token"):
+            raise RuntimeError(
+                "Outlook not authorized. Call start_graph_auth() then complete_graph_auth() first."
+            )
     token = auth.get_graph_token(config)
 
     owns_conn = conn is None
