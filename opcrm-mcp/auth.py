@@ -35,11 +35,20 @@ def get_graph_token(config, config_path=None):
     return _run_device_flow(config, config_path)
 
 
+def _client_params(config):
+    """Base params included in all token requests — adds secret if configured."""
+    params = {"client_id": config["graph_client_id"]}
+    secret = config.get("graph_client_secret", "")
+    if secret:
+        params["client_secret"] = secret
+    return params
+
+
 def _refresh_token(config, config_path=None):
     r = requests.post(
         f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/token",
         data={
-            "client_id": config["graph_client_id"],
+            **_client_params(config),
             "grant_type": "refresh_token",
             "refresh_token": config["graph_refresh_token"],
             "scope": "Mail.Read User.Read offline_access",
@@ -58,7 +67,7 @@ def _run_device_flow(config, config_path=None):
     r = requests.post(
         f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/devicecode",
         data={
-            "client_id": config["graph_client_id"],
+            **_client_params(config),
             "scope": "Mail.Read User.Read offline_access",
         },
     )
@@ -76,7 +85,7 @@ def _run_device_flow(config, config_path=None):
         poll = requests.post(
             f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/token",
             data={
-                "client_id": config["graph_client_id"],
+                **_client_params(config),
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 "device_code": flow["device_code"],
             },
