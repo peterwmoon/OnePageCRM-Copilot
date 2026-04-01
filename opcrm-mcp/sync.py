@@ -98,10 +98,12 @@ def sync_opcrm(config, conn=None):
     try:
         raw_contacts = opcrm.fetch_all_contacts(config)
         records = 0
+        synced_contact_ids = set()
 
         for raw in raw_contacts:
             contact = _parse_contact(raw)
             db.upsert_contact(conn, contact)
+            synced_contact_ids.add(contact["id"])
 
             c = raw.get("contact", raw)
             db.upsert_tags(conn, contact["id"], c.get("tags", []))
@@ -119,8 +121,10 @@ def sync_opcrm(config, conn=None):
                 records += 1
 
         for raw_action in opcrm.fetch_next_actions(config):
-            db.upsert_action(conn, _parse_action(raw_action))
-            records += 1
+            action = _parse_action(raw_action)
+            if action["contact_id"] in synced_contact_ids:
+                db.upsert_action(conn, action)
+                records += 1
 
         db.log_sync(conn, "opcrm", len(raw_contacts), records)
         conn.commit()

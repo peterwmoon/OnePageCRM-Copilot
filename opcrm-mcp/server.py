@@ -7,6 +7,8 @@ Configure Claude Desktop to connect via stdio.
 from datetime import date
 from mcp.server.fastmcp import FastMCP
 
+import time
+
 import auth
 import db
 import sync as sync_module
@@ -19,17 +21,98 @@ _config = auth.load_config()
 db.init_db()
 _conn = db.get_conn()
 
+# In-progress Graph device flow (set by start_graph_auth, consumed by complete_graph_auth)
+_pending_device_flow: dict = {}
+
 
 # ── Sync tools ─────────────────────────────────────────────────────────────────
 
 @mcp.tool()
 def sync() -> dict:
     """
-    Sync all data from OnePageCRM and Outlook into the local cache.
-    Run this before analysis sessions or when you want fresh data.
+    Sync contacts, notes, calls, and meetings from OnePageCRM into the local cache.
+    Does NOT sync Outlook emails — use start_graph_auth / complete_graph_auth first
+    if Outlook has not been authorized yet, then call sync_emails().
     Returns a summary of what was synced.
     """
-    return sync_module.full_sync(_config, conn=_conn)
+    return sync_module.sync_opcrm(_config, conn=_conn)
+
+
+@mcp.tool()
+def sync_emails() -> dict:
+    """
+    Sync Outlook emails into the local cache. Requires Graph authorization.
+    If this fails with an auth error, call start_graph_auth() first.
+    """
+    return sync_module.sync_graph(_config, conn=_conn)
+
+
+@mcp.tool()
+def start_graph_auth() -> dict:
+    """
+    Begin Microsoft Graph (Outlook) OAuth authorization via device code flow.
+    Returns a URL and a short code for the user to enter at that URL.
+    After the user completes authorization in their browser, call complete_graph_auth().
+    """
+    import requests
+    global _pending_device_flow
+    r = requests.post(
+        f"https://login.microsoftonline.com/{_config['graph_tenant_id']}/oauth2/v2.0/devicecode",
+        data={
+            "client_id": _config["graph_client_id"],
+            "scope": "Mail.Read User.Read offline_access",
+        },
+    )
+    r.raise_for_status()
+    flow = r.json()
+    _pending_device_flow = {
+        "device_code": flow["device_code"],
+        "interval": flow.get("interval", 5),
+        "expires_at": time.time() + flow.get("expires_in", 900),
+    }
+    return {
+        "action": "Visit the URL below and enter the code to authorize Outlook access.",
+        "url": flow["verification_uri"],
+        "code": flow["user_code"],
+        "next_step": "After completing authorization in your browser, call complete_graph_auth().",
+    }
+
+
+@mcp.tool()
+def complete_graph_auth() -> dict:
+    """
+    Complete Microsoft Graph authorization after the user has entered the device code.
+    Call this after start_graph_auth() once you've authorized in the browser.
+    """
+    import requests
+    global _pending_device_flow
+    if not _pending_device_flow:
+        return {"error": "No authorization in progress. Call start_graph_auth() first."}
+    if time.time() > _pending_device_flow["expires_at"]:
+        _pending_device_flow = {}
+        return {"error": "Authorization code expired. Call start_graph_auth() to restart."}
+
+    poll = requests.post(
+        f"https://login.microsoftonline.com/{_config['graph_tenant_id']}/oauth2/v2.0/token",
+        data={
+            "client_id": _config["graph_client_id"],
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "device_code": _pending_device_flow["device_code"],
+        },
+    )
+    data = poll.json()
+    if "access_token" in data:
+        _config["graph_access_token"] = data["access_token"]
+        _config["graph_refresh_token"] = data.get("refresh_token", "")
+        _config["graph_token_expiry"] = time.time() + data.get("expires_in", 3600)
+        auth.save_config(_config)
+        _pending_device_flow = {}
+        return {"status": "authorized", "message": "Outlook access granted. You can now call sync_emails()."}
+    error = data.get("error", "")
+    if error == "authorization_pending":
+        return {"status": "pending", "message": "Not yet authorized. Complete the steps in your browser, then call complete_graph_auth() again."}
+    _pending_device_flow = {}
+    return {"error": f"Authorization failed: {data.get('error_description', error)}"}
 
 
 @mcp.tool()
