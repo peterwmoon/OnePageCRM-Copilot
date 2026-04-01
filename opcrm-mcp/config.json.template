@@ -1,0 +1,10 @@
+{
+  "opcrm_user_id": "YOUR_ONEPAGECRM_USER_ID",
+  "opcrm_api_key": "YOUR_ONEPAGECRM_API_KEY",
+  "opcrm_my_user_id": "YOUR_ONEPAGECRM_USER_ID",
+  "graph_client_id": "YOUR_AZURE_APP_CLIENT_ID",
+  "graph_tenant_id": "YOUR_AZURE_TENANT_ID",
+  "graph_access_token": "",
+  "graph_refresh_token": "",
+  "graph_token_expiry": 0
+}
