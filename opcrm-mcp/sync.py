@@ -204,8 +204,8 @@ def sync_graph(config, conn=None):
             conn.close()
 
 
-def full_sync(config):
+def full_sync(config, conn=None):
     """Run OPCRM sync then Graph sync. Returns combined summary."""
-    result_opcrm = sync_opcrm(config)
-    result_graph = sync_graph(config)
+    result_opcrm = sync_opcrm(config, conn=conn)
+    result_graph = sync_graph(config, conn=conn)
     return {**result_opcrm, **result_graph}

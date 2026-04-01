@@ -4,8 +4,7 @@ OnePageCRM Copilot MCP Server
 Run with: python server.py
 Configure Claude Desktop to connect via stdio.
 """
-import json
-import sqlite3
+from datetime import date
 from mcp.server.fastmcp import FastMCP
 
 import auth
@@ -30,7 +29,7 @@ def sync() -> dict:
     Run this before analysis sessions or when you want fresh data.
     Returns a summary of what was synced.
     """
-    return sync_module.full_sync(_config)
+    return sync_module.full_sync(_config, conn=_conn)
 
 
 @mcp.tool()
@@ -168,7 +167,6 @@ def summarize_relationship(contact_id: str) -> dict:
 
     days_since = None
     if last_touch and last_touch.get("date"):
-        from datetime import date
         try:
             last_date = date.fromisoformat(last_touch["date"][:10])
             days_since = (date.today() - last_date).days
@@ -220,7 +218,6 @@ def cluster_contacts(by: str) -> dict:
             )
         return result
     elif by == "cadence_status":
-        from datetime import date
         overdue = db.list_overdue_contacts(_conn)
         overdue_ids = {r["id"] for r in overdue}
         all_contacts = _conn.execute("SELECT * FROM contacts").fetchall()
@@ -244,7 +241,7 @@ def cluster_contacts(by: str) -> dict:
                 except ValueError:
                     pass
             entry = {"id": c["id"], "name": c["name"],
-                     "days_since_last_touch": days_since}
+                     "days_since": days_since}
             if days_since is not None and days_since > cadence_days * 0.8:
                 upcoming.append(entry)
             else:
