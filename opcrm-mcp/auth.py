@@ -67,7 +67,7 @@ def _run_device_flow(config, config_path=None):
     r = requests.post(
         f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/devicecode",
         data={
-            **_client_params(config),
+            "client_id": config["graph_client_id"],
             "scope": "Mail.Read User.Read offline_access",
         },
     )
@@ -85,7 +85,7 @@ def _run_device_flow(config, config_path=None):
         poll = requests.post(
             f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/token",
             data={
-                **_client_params(config),
+                "client_id": config["graph_client_id"],
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 "device_code": flow["device_code"],
             },

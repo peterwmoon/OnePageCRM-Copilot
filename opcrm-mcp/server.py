@@ -69,7 +69,7 @@ def start_graph_auth() -> dict:
     r = requests.post(
         f"https://login.microsoftonline.com/{_config['graph_tenant_id']}/oauth2/v2.0/devicecode",
         data={
-            **auth._client_params(_config),
+            "client_id": _config["graph_client_id"],
             "scope": "Mail.Read User.Read offline_access",
         },
     )
@@ -105,7 +105,7 @@ def complete_graph_auth() -> dict:
     poll = requests.post(
         f"https://login.microsoftonline.com/{_config['graph_tenant_id']}/oauth2/v2.0/token",
         data={
-            **auth._client_params(_config),
+            "client_id": _config["graph_client_id"],
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "device_code": _pending_device_flow["device_code"],
         },
