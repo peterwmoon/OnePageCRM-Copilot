@@ -89,7 +89,7 @@ def _parse_action(raw):
 
 
 def sync_opcrm(config, conn=None):
-    """Sync all OPCRM data into the database. Pass conn for testing."""
+    """Sync contacts and next actions from OPCRM. Fast: ~3 API calls total."""
     owns_conn = conn is None
     if owns_conn:
         conn = db.get_conn()
@@ -97,41 +97,80 @@ def sync_opcrm(config, conn=None):
 
     try:
         raw_contacts = opcrm.fetch_all_contacts(config)
-        records = 0
         synced_contact_ids = set()
 
         for raw in raw_contacts:
             contact = _parse_contact(raw)
             db.upsert_contact(conn, contact)
             synced_contact_ids.add(contact["id"])
-
             c = raw.get("contact", raw)
             db.upsert_tags(conn, contact["id"], c.get("tags", []))
 
-            for raw_note in opcrm.fetch_notes(config, contact["id"]):
-                db.upsert_note(conn, _parse_note(raw_note, contact["id"]))
-                records += 1
-
-            for raw_call in opcrm.fetch_calls(config, contact["id"]):
-                db.upsert_call(conn, _parse_call(raw_call, contact["id"]))
-                records += 1
-
-            for raw_meeting in opcrm.fetch_meetings(config, contact["id"]):
-                db.upsert_meeting(conn, _parse_meeting(raw_meeting, contact["id"]))
-                records += 1
-
+        actions_synced = 0
         for raw_action in opcrm.fetch_next_actions(config):
             action = _parse_action(raw_action)
             if action["contact_id"] in synced_contact_ids:
                 db.upsert_action(conn, action)
-                records += 1
+                actions_synced += 1
 
-        db.log_sync(conn, "opcrm", len(raw_contacts), records)
+        db.log_sync(conn, "opcrm", len(raw_contacts), actions_synced)
         conn.commit()
-        return {"contacts_synced": len(raw_contacts), "records_synced": records, "error": None}
+        return {
+            "contacts_synced": len(raw_contacts),
+            "actions_synced": actions_synced,
+            "error": None,
+            "note": "Run sync_history() to sync notes, calls, and meetings (slower).",
+        }
 
     except Exception as e:
         db.log_sync(conn, "opcrm", 0, 0, str(e))
+        conn.commit()
+        raise
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def sync_history(config, conn=None):
+    """Bulk-sync notes, calls, and meetings across all contacts. Slower — run once or weekly."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = db.get_conn()
+        db.init_db(conn)
+
+    try:
+        known_ids = {
+            row["id"] for row in conn.execute("SELECT id FROM contacts").fetchall()
+        }
+
+        notes = calls = meetings = 0
+        for raw in opcrm.fetch_all_notes(config):
+            n = raw.get("note", raw)
+            cid = n.get("contact_id", "")
+            if cid in known_ids:
+                db.upsert_note(conn, _parse_note(raw, cid))
+                notes += 1
+
+        for raw in opcrm.fetch_all_calls(config):
+            c = raw.get("call", raw)
+            cid = c.get("contact_id", "")
+            if cid in known_ids:
+                db.upsert_call(conn, _parse_call(raw, cid))
+                calls += 1
+
+        for raw in opcrm.fetch_all_meetings(config):
+            m = raw.get("meeting", raw)
+            cid = m.get("contact_id", "")
+            if cid in known_ids:
+                db.upsert_meeting(conn, _parse_meeting(raw, cid))
+                meetings += 1
+
+        db.log_sync(conn, "opcrm_history", 0, notes + calls + meetings)
+        conn.commit()
+        return {"notes_synced": notes, "calls_synced": calls, "meetings_synced": meetings, "error": None}
+
+    except Exception as e:
+        db.log_sync(conn, "opcrm_history", 0, 0, str(e))
         conn.commit()
         raise
     finally:

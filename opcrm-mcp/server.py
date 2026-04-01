@@ -39,6 +39,16 @@ def sync() -> dict:
 
 
 @mcp.tool()
+def sync_history() -> dict:
+    """
+    Bulk-sync notes, calls, and meetings for all contacts from OnePageCRM.
+    This is slower (many API calls) — run it once after first sync, then weekly.
+    sync() must have been run first to populate contacts.
+    """
+    return sync_module.sync_history(_config, conn=_conn)
+
+
+@mcp.tool()
 def sync_emails() -> dict:
     """
     Sync Outlook emails into the local cache. Requires Graph authorization.

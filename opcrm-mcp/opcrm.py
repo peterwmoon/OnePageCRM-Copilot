@@ -48,6 +48,26 @@ def fetch_next_actions(config):
     return data.get("actions", []) if isinstance(data, dict) else data
 
 
+def _fetch_all_pages(config, endpoint, key, extra_params=None):
+    """Fetch all pages from a paginated endpoint, returning a flat list."""
+    items = []
+    page = 1
+    params = {"per_page": 100, **(extra_params or {})}
+    while True:
+        params["page"] = page
+        r = requests.get(f"{BASE}/{endpoint}", auth=_auth(config), params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json().get("data", {})
+        batch = data.get(key, []) if isinstance(data, dict) else data
+        if not batch:
+            break
+        items.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return items
+
+
 def fetch_notes(config, contact_id):
     r = requests.get(
         f"{BASE}/notes.json",
@@ -82,6 +102,21 @@ def fetch_meetings(config, contact_id):
     r.raise_for_status()
     data = r.json().get("data", {})
     return data.get("meetings", []) if isinstance(data, dict) else data
+
+
+def fetch_all_notes(config):
+    """Fetch all notes across all contacts (bulk, paginated)."""
+    return _fetch_all_pages(config, "notes.json", "notes")
+
+
+def fetch_all_calls(config):
+    """Fetch all calls across all contacts (bulk, paginated)."""
+    return _fetch_all_pages(config, "calls.json", "calls")
+
+
+def fetch_all_meetings(config):
+    """Fetch all meetings across all contacts (bulk, paginated)."""
+    return _fetch_all_pages(config, "meetings.json", "meetings")
 
 
 def create_note(config, contact_id, text):
