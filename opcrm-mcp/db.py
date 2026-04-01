@@ -200,7 +200,7 @@ def get_contact_by_id(conn, contact_id):
         return None
     result = dict(row)
     result["tags"] = [
-        r[0] for r in conn.execute(
+        r["tag"] for r in conn.execute(
             "SELECT tag FROM contact_tags WHERE contact_id = ?", (contact_id,)
         ).fetchall()
     ]
@@ -304,10 +304,13 @@ def get_notes(conn, contact_id):
 
 def get_sync_status(conn):
     rows = conn.execute("""
-        SELECT source,
-               MAX(last_synced_at) AS last_synced_at,
-               contacts_synced, records_synced, error
-        FROM sync_log GROUP BY source
+        SELECT * FROM sync_log s
+        WHERE s.id = (
+            SELECT id FROM sync_log
+            WHERE source = s.source
+            ORDER BY last_synced_at DESC, id DESC
+            LIMIT 1
+        )
     """).fetchall()
     return {row["source"]: dict(row) for row in rows}
 

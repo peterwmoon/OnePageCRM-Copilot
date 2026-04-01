@@ -199,3 +199,61 @@ def test_get_sync_status():
     conn.commit()
     status = db.get_sync_status(conn)
     assert status["opcrm"]["contacts_synced"] == 5
+
+
+def test_get_sync_status_returns_most_recent_row():
+    conn = make_conn()
+    db.log_sync(conn, "opcrm", contacts_synced=5, records_synced=30)
+    db.log_sync(conn, "opcrm", contacts_synced=12, records_synced=80)
+    conn.commit()
+    status = db.get_sync_status(conn)
+    # Should return the most recent row's counts, not an arbitrary one
+    assert status["opcrm"]["contacts_synced"] == 12
+
+
+def test_get_all_tags_returns_distinct_tags():
+    conn = make_conn()
+    seed_contact(conn, contact_id="c1", tags=["investor", "board"])
+    seed_contact(conn, contact_id="c2", email="b@b.com", tags=["investor"])
+    conn.commit()
+    tags = db.get_all_tags(conn)
+    assert set(tags) == {"investor", "board"}
+    assert len(tags) == 2  # no duplicates
+
+
+def test_list_contacts_by_owner():
+    conn = make_conn()
+    seed_contact(conn, contact_id="c1", owner_id="u1")
+    seed_contact(conn, contact_id="c2", email="b@b.com", owner_id="u2")
+    conn.commit()
+    results = db.list_contacts_by_owner(conn, "u1")
+    assert len(results) == 1
+    assert results[0]["id"] == "c1"
+
+
+def test_get_recent_emails():
+    conn = make_conn()
+    seed_contact(conn)
+    db.upsert_email(conn, {
+        "id": "e1", "contact_id": "c1", "subject": "Hello",
+        "body_preview": "Hi", "date": "2026-01-01",
+        "direction": "in", "thread_id": "t1",
+        "from_address": "alice@acme.com", "to_addresses": "[]"
+    })
+    conn.commit()
+    emails = db.get_recent_emails(conn, "c1")
+    assert len(emails) == 1
+    assert emails[0]["subject"] == "Hello"
+
+
+def test_get_notes_returns_notes():
+    conn = make_conn()
+    seed_contact(conn)
+    db.upsert_note(conn, {
+        "id": "n1", "contact_id": "c1", "text": "Met at conference",
+        "date": "2026-01-01", "author_id": "u1"
+    })
+    conn.commit()
+    notes = db.get_notes(conn, "c1")
+    assert len(notes) == 1
+    assert notes[0]["text"] == "Met at conference"
