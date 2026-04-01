@@ -17,7 +17,10 @@ def fetch_all_contacts(config):
             f"{BASE}/contacts.json",
             auth=_auth(config),
             params={"page": page, "per_page": 100},
+            timeout=30,
         )
+        if r.status_code == 401:
+            raise RuntimeError("OnePageCRM auth failed — check User ID and API Key in config.json.")
         r.raise_for_status()
         data = r.json().get("data", {})
         if isinstance(data, list):
@@ -38,6 +41,7 @@ def fetch_next_actions(config):
         f"{BASE}/actions.json",
         auth=_auth(config),
         params={"per_page": 100},
+        timeout=30,
     )
     r.raise_for_status()
     data = r.json().get("data", {})
@@ -49,6 +53,7 @@ def fetch_notes(config, contact_id):
         f"{BASE}/notes.json",
         auth=_auth(config),
         params={"contact_id": contact_id, "per_page": 100},
+        timeout=30,
     )
     r.raise_for_status()
     data = r.json().get("data", {})
@@ -60,6 +65,7 @@ def fetch_calls(config, contact_id):
         f"{BASE}/calls.json",
         auth=_auth(config),
         params={"contact_id": contact_id, "per_page": 100},
+        timeout=30,
     )
     r.raise_for_status()
     data = r.json().get("data", {})
@@ -71,6 +77,7 @@ def fetch_meetings(config, contact_id):
         f"{BASE}/meetings.json",
         auth=_auth(config),
         params={"contact_id": contact_id, "per_page": 100},
+        timeout=30,
     )
     r.raise_for_status()
     data = r.json().get("data", {})
@@ -83,6 +90,7 @@ def create_note(config, contact_id, text):
         f"{BASE}/notes.json",
         auth=_auth(config),
         json={"note": {"contact_id": contact_id, "text": text, "date": today}},
+        timeout=30,
     )
     r.raise_for_status()
     return r.json()
@@ -93,6 +101,7 @@ def create_action(config, contact_id, text, due_date):
         f"{BASE}/actions.json",
         auth=_auth(config),
         json={"action": {"contact_id": contact_id, "text": text, "date": due_date}},
+        timeout=30,
     )
     r.raise_for_status()
     return r.json()
@@ -103,6 +112,7 @@ def complete_action(config, action_id):
         f"{BASE}/actions/{action_id}.json",
         auth=_auth(config),
         json={"action": {"status": "done"}},
+        timeout=30,
     )
     r.raise_for_status()
     return r.json()
@@ -113,6 +123,7 @@ def reschedule_action(config, action_id, new_date):
         f"{BASE}/actions/{action_id}.json",
         auth=_auth(config),
         json={"action": {"date": new_date}},
+        timeout=30,
     )
     r.raise_for_status()
     return r.json()
@@ -124,13 +135,14 @@ def update_cadence(config, contact_id, months):
         f"{BASE}/contacts/{contact_id}.json",
         auth=_auth(config),
         json={"contact": {"custom_fields": [{"id": field_id, "value": str(months)}]}},
+        timeout=30,
     )
     r.raise_for_status()
     return r.json()
 
 
 def add_tag(config, contact_id, tag):
-    r = requests.get(f"{BASE}/contacts/{contact_id}.json", auth=_auth(config))
+    r = requests.get(f"{BASE}/contacts/{contact_id}.json", auth=_auth(config), timeout=30)
     r.raise_for_status()
     contact = r.json().get("data", {}).get("contact", {})
     tags = list(contact.get("tags", []))
@@ -140,13 +152,14 @@ def add_tag(config, contact_id, tag):
         f"{BASE}/contacts/{contact_id}.json",
         auth=_auth(config),
         json={"contact": {"tags": tags}},
+        timeout=30,
     )
     r2.raise_for_status()
     return r2.json()
 
 
 def remove_tag(config, contact_id, tag):
-    r = requests.get(f"{BASE}/contacts/{contact_id}.json", auth=_auth(config))
+    r = requests.get(f"{BASE}/contacts/{contact_id}.json", auth=_auth(config), timeout=30)
     r.raise_for_status()
     contact = r.json().get("data", {}).get("contact", {})
     tags = [t for t in contact.get("tags", []) if t != tag]
@@ -154,6 +167,7 @@ def remove_tag(config, contact_id, tag):
         f"{BASE}/contacts/{contact_id}.json",
         auth=_auth(config),
         json={"contact": {"tags": tags}},
+        timeout=30,
     )
     r2.raise_for_status()
     return r2.json()
