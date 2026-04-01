@@ -29,6 +29,18 @@ def get_graph_token(config, config_path=None):
             and config.get("graph_token_expiry", 0) > time.time() + 60):
         return config["graph_access_token"]
 
+    # In-memory token is missing or expired — re-read disk in case it was updated
+    # by an external auth script without restarting the server.
+    path = Path(config_path or _DEFAULT_CONFIG_PATH)
+    if path.exists():
+        fresh = json.load(open(path))
+        if (fresh.get("graph_access_token")
+                and fresh.get("graph_token_expiry", 0) > time.time() + 60):
+            config.update(fresh)
+            return config["graph_access_token"]
+        if fresh.get("graph_refresh_token") and not config.get("graph_refresh_token"):
+            config.update(fresh)
+
     if config.get("graph_refresh_token"):
         return _refresh_token(config, config_path)
 
