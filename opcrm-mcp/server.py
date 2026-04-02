@@ -51,10 +51,33 @@ def sync_history() -> dict:
 @mcp.tool()
 def sync_emails() -> dict:
     """
-    Sync Outlook emails into the local cache. Requires Graph authorization.
-    If this fails with an auth error, call start_graph_auth() first.
+    Incrementally sync Outlook emails since the last sync.
+    Matched emails (sender/recipient in CRM) go to the emails table.
+    Unmatched emails go to unmatched_emails for contact discovery.
+    Requires Graph authorization — call start_graph_auth() first if needed.
     """
     return sync_module.sync_graph(_config, conn=_conn)
+
+
+@mcp.tool()
+def sync_calendar() -> dict:
+    """
+    Incrementally sync Outlook calendar events since the last sync.
+    Requires Graph authorization — call start_graph_auth() first if needed.
+    """
+    return sync_module.sync_calendar(_config, conn=_conn)
+
+
+@mcp.tool()
+def find_unknown_contacts(min_emails: int = 2, limit: int = 50) -> list:
+    """
+    Return people who have emailed you but are not in your CRM.
+    Grouped by sender address, sorted by frequency. Filters out automated senders.
+    min_emails: minimum number of emails to be included (default 2).
+    limit: max results to return (default 50).
+    Use this to discover contacts missing from OnePageCRM.
+    """
+    return db.get_unknown_contact_candidates(_conn, min_emails=min_emails, limit=limit)
 
 
 @mcp.tool()

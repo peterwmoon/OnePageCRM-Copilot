@@ -178,8 +178,57 @@ def sync_history(config, conn=None):
             conn.close()
 
 
-def sync_graph(config, conn=None):
-    """Sync Outlook emails matched to OPCRM contacts. Pass conn for testing."""
+def _process_email_batch(msgs, email_map, conn):
+    """Match a list of Graph messages to contacts; store matched and unmatched. Returns (matched, unmatched) counts."""
+    matched = unmatched = 0
+    for msg in msgs:
+        from_addr = msg.get("from", {}).get("emailAddress", {}).get("address", "").lower()
+        to_addrs = [
+            r["emailAddress"]["address"].lower()
+            for r in msg.get("toRecipients", [])
+        ]
+        contact_id = email_map.get(from_addr)
+        direction = "in"
+        if not contact_id:
+            for addr in to_addrs:
+                if addr in email_map:
+                    contact_id = email_map[addr]
+                    direction = "out"
+                    break
+
+        if contact_id:
+            db.upsert_email(conn, {
+                "id": msg["id"],
+                "contact_id": contact_id,
+                "subject": msg.get("subject", ""),
+                "body_preview": msg.get("bodyPreview", ""),
+                "date": msg.get("receivedDateTime", ""),
+                "direction": direction,
+                "thread_id": msg.get("conversationId", ""),
+                "from_address": from_addr,
+                "to_addresses": json.dumps(to_addrs),
+            })
+            matched += 1
+        else:
+            db.upsert_unmatched_email(conn, {
+                "id": msg["id"],
+                "subject": msg.get("subject", ""),
+                "body_preview": msg.get("bodyPreview", ""),
+                "date": msg.get("receivedDateTime", ""),
+                "direction": "in" if from_addr and from_addr not in to_addrs else "out",
+                "from_address": from_addr,
+                "to_addresses": json.dumps(to_addrs),
+                "conversation_id": msg.get("conversationId", ""),
+            })
+            unmatched += 1
+    return matched, unmatched
+
+
+def sync_graph(config, conn=None, since_date=None):
+    """
+    Sync Outlook emails incrementally. Uses last sync timestamp if since_date not given.
+    Matched emails go to emails table; unmatched go to unmatched_emails.
+    """
     import time
     if not (config.get("graph_access_token") and config.get("graph_token_expiry", 0) > time.time() + 60):
         if not config.get("graph_refresh_token"):
@@ -194,58 +243,103 @@ def sync_graph(config, conn=None):
         db.init_db(conn)
 
     try:
+        if since_date is None:
+            last = db.get_last_sync_time(conn, "graph")
+            if last:
+                since_date = last.replace(" ", "T") + "Z"
+            else:
+                dt = datetime.now(timezone.utc) - timedelta(days=90)
+                since_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
         rows = conn.execute("SELECT id, email FROM contacts WHERE email != ''").fetchall()
         email_map = {row["email"].lower(): row["id"] for row in rows}
 
         seen_ids = set()
-        all_emails = []
+        all_msgs = []
         for folder in ["me/messages", "me/mailFolders/sentItems/messages"]:
-            for msg in graph.fetch_emails(token, folder=folder):
+            for msg in graph.fetch_emails(token, since_date=since_date, folder=folder):
                 if msg["id"] not in seen_ids:
                     seen_ids.add(msg["id"])
-                    all_emails.append(msg)
+                    all_msgs.append(msg)
 
-        inserted = 0
-        for msg in all_emails:
-            from_addr = (
-                msg.get("from", {}).get("emailAddress", {}).get("address", "").lower()
-            )
-            to_addrs = [
-                r["emailAddress"]["address"].lower()
-                for r in msg.get("toRecipients", [])
-            ]
+        matched, unmatched = _process_email_batch(all_msgs, email_map, conn)
 
-            contact_id = email_map.get(from_addr)
-            direction = "in"
-            if not contact_id:
-                for addr in to_addrs:
-                    if addr in email_map:
-                        contact_id = email_map[addr]
-                        direction = "out"
-                        break
-
-            if not contact_id:
-                continue
-
-            db.upsert_email(conn, {
-                "id": msg["id"],
-                "contact_id": contact_id,
-                "subject": msg.get("subject", ""),
-                "body_preview": msg.get("bodyPreview", ""),
-                "date": msg.get("receivedDateTime", ""),
-                "direction": direction,
-                "thread_id": msg.get("conversationId", ""),
-                "from_address": from_addr,
-                "to_addresses": json.dumps(to_addrs),
-            })
-            inserted += 1
-
-        db.log_sync(conn, "graph", 0, inserted)
+        db.log_sync(conn, "graph", 0, matched + unmatched)
         conn.commit()
-        return {"emails_synced": inserted, "error": None}
+        return {"emails_matched": matched, "emails_unmatched": unmatched, "since": since_date, "error": None}
 
     except Exception as e:
         db.log_sync(conn, "graph", 0, 0, str(e))
+        conn.commit()
+        raise
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def sync_calendar(config, conn=None, since_date=None, until_date=None):
+    """Sync Outlook calendar events. Incremental by default using last sync timestamp."""
+    import time
+    if not config.get("graph_refresh_token") and not (
+        config.get("graph_access_token") and config.get("graph_token_expiry", 0) > time.time() + 60
+    ):
+        raise RuntimeError("Outlook not authorized. Run start_graph_auth() first.")
+
+    token = auth.get_graph_token(config)
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = db.get_conn()
+        db.init_db(conn)
+
+    try:
+        if since_date is None:
+            last = db.get_last_sync_time(conn, "calendar")
+            if last:
+                since_date = last.replace(" ", "T") + "Z"
+            else:
+                dt = datetime.now(timezone.utc) - timedelta(days=90)
+                since_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        rows = conn.execute("SELECT id, email FROM contacts WHERE email != ''").fetchall()
+        email_map = {row["email"].lower(): row["id"] for row in rows}
+
+        events = graph.fetch_calendar_events(token, since_date=since_date, until_date=until_date)
+
+        inserted = 0
+        for evt in events:
+            organizer = evt.get("organizer", {}).get("emailAddress", {}).get("address", "").lower()
+            attendees = [
+                a["emailAddress"]["address"].lower()
+                for a in evt.get("attendees", [])
+                if a.get("emailAddress", {}).get("address")
+            ]
+            # Match to a contact if organizer or any attendee is in CRM
+            contact_id = email_map.get(organizer)
+            if not contact_id:
+                for addr in attendees:
+                    if addr in email_map:
+                        contact_id = addr
+                        break
+
+            db.upsert_calendar_event(conn, {
+                "id": evt["id"],
+                "subject": evt.get("subject", ""),
+                "start_datetime": evt.get("start", {}).get("dateTime", ""),
+                "end_datetime": evt.get("end", {}).get("dateTime", ""),
+                "organizer_email": organizer,
+                "attendees": json.dumps(attendees),
+                "body_preview": evt.get("bodyPreview", ""),
+                "contact_id": contact_id,
+            })
+            inserted += 1
+
+        db.log_sync(conn, "calendar", 0, inserted)
+        conn.commit()
+        return {"events_synced": inserted, "since": since_date, "error": None}
+
+    except Exception as e:
+        db.log_sync(conn, "calendar", 0, 0, str(e))
         conn.commit()
         raise
     finally:

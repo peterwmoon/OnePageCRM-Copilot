@@ -75,6 +75,28 @@ CREATE TABLE IF NOT EXISTS emails (
     FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS unmatched_emails (
+    id TEXT PRIMARY KEY,
+    subject TEXT,
+    body_preview TEXT,
+    date TEXT,
+    direction TEXT,
+    from_address TEXT,
+    to_addresses TEXT,
+    conversation_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY,
+    subject TEXT,
+    start_datetime TEXT,
+    end_datetime TEXT,
+    organizer_email TEXT,
+    attendees TEXT,
+    body_preview TEXT,
+    contact_id TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -89,6 +111,9 @@ CREATE INDEX IF NOT EXISTS idx_calls_contact_id ON calls(contact_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_contact_id ON meetings(contact_id);
 CREATE INDEX IF NOT EXISTS idx_emails_contact_id ON emails(contact_id);
 CREATE INDEX IF NOT EXISTS idx_next_actions_contact_id ON next_actions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_unmatched_from ON unmatched_emails(from_address);
+CREATE INDEX IF NOT EXISTS idx_unmatched_date ON unmatched_emails(date);
+CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_datetime);
 """
 
 
@@ -320,3 +345,67 @@ def get_all_tags(conn):
         "SELECT DISTINCT tag FROM contact_tags ORDER BY tag"
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def upsert_unmatched_email(conn, e):
+    conn.execute("""
+        INSERT INTO unmatched_emails
+            (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+        VALUES
+            (:id, :subject, :body_preview, :date, :direction, :from_address, :to_addresses, :conversation_id)
+        ON CONFLICT(id) DO UPDATE SET
+            subject=excluded.subject, date=excluded.date
+    """, e)
+
+
+def upsert_calendar_event(conn, e):
+    conn.execute("""
+        INSERT INTO calendar_events
+            (id, subject, start_datetime, end_datetime, organizer_email, attendees, body_preview, contact_id)
+        VALUES
+            (:id, :subject, :start_datetime, :end_datetime, :organizer_email, :attendees, :body_preview, :contact_id)
+        ON CONFLICT(id) DO UPDATE SET
+            subject=excluded.subject, start_datetime=excluded.start_datetime,
+            end_datetime=excluded.end_datetime, attendees=excluded.attendees
+    """, e)
+
+
+def get_last_sync_time(conn, source):
+    """Return ISO timestamp of last successful sync for source, or None."""
+    row = conn.execute("""
+        SELECT last_synced_at FROM sync_log
+        WHERE source = ? AND error IS NULL
+        ORDER BY last_synced_at DESC LIMIT 1
+    """, (source,)).fetchone()
+    return row["last_synced_at"] if row else None
+
+
+def get_unknown_contact_candidates(conn, min_emails=2, limit=50):
+    """
+    Return inbound unmatched senders grouped by address, sorted by frequency.
+    Filters out obvious automated senders (noreply, mailer, etc.).
+    """
+    rows = conn.execute("""
+        SELECT from_address,
+               COUNT(*)    AS email_count,
+               MAX(date)   AS last_date,
+               MIN(date)   AS first_date
+        FROM unmatched_emails
+        WHERE direction = 'in'
+          AND from_address != ''
+          AND from_address NOT LIKE '%noreply%'
+          AND from_address NOT LIKE '%no-reply%'
+          AND from_address NOT LIKE '%donotreply%'
+          AND from_address NOT LIKE '%mailer%'
+          AND from_address NOT LIKE '%bounce%'
+          AND from_address NOT LIKE '%notification%'
+          AND from_address NOT LIKE '%alert%'
+          AND from_address NOT LIKE '%support@%'
+          AND from_address NOT LIKE '%info@%'
+          AND from_address NOT LIKE '%newsletter%'
+        GROUP BY from_address
+        HAVING COUNT(*) >= ?
+        ORDER BY email_count DESC, last_date DESC
+        LIMIT ?
+    """, (min_emails, limit)).fetchall()
+    return [dict(r) for r in rows]
