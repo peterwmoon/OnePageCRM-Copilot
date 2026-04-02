@@ -1,4 +1,5 @@
 """Tests for LinkedIn integration."""
+import pytest
 import sqlite3
 import sys
 from pathlib import Path
@@ -115,14 +116,13 @@ def test_parse_connections_csv_skips_preamble():
 
 
 def test_parse_connections_csv_skips_rows_without_url():
-    csv = """First Name,Last Name,URL,Email Address,Company,Position,Connected On
+    csv_text = """First Name,Last Name,URL,Email Address,Company,Position,Connected On
 Jane,Smith,,jane@example.com,Acme Corp,VP Sales,01 Jan 2023
 """
-    result = li.parse_connections_csv(csv)
+    result = li.parse_connections_csv(csv_text)
     assert len(result) == 0
 
 
 def test_parse_connections_csv_raises_if_no_header():
-    import pytest
     with pytest.raises(ValueError, match="header"):
         li.parse_connections_csv("This file has no CSV header at all.\n")

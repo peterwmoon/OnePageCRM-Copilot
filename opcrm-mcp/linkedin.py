@@ -3,7 +3,6 @@ LinkedIn data processing: CSV parsing and job-change detection.
 """
 import csv
 import io
-from datetime import date, timedelta
 
 
 def parse_connections_csv(text):
@@ -33,7 +32,7 @@ def parse_connections_csv(text):
             "Expected a row starting with 'First Name'."
         )
 
-    csv_text = "\n".join(lines[header_idx:])
+    csv_text = "\n".join(lines[header_idx:]).lstrip("\ufeff")
     reader = csv.DictReader(io.StringIO(csv_text))
 
     connections = []
