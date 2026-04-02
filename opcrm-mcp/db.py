@@ -476,3 +476,24 @@ def get_unknown_contact_candidates(conn, min_emails=2, limit=None):
         {f"LIMIT {limit}" if limit else ""}
     """, (min_emails,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def insert_linkedin_connection(conn, c, snapshot_date):
+    conn.execute("""
+        INSERT OR IGNORE INTO linkedin_connections
+            (linkedin_url, snapshot_date, first_name, last_name,
+             email, company, position, connected_on)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        c["linkedin_url"], snapshot_date,
+        c.get("first_name", ""), c.get("last_name", ""),
+        c.get("email", ""), c.get("company", ""),
+        c.get("position", ""), c.get("connected_on", ""),
+    ))
+
+
+def log_linkedin_import(conn, snapshot_date, connection_count):
+    conn.execute("""
+        INSERT INTO linkedin_import_log (snapshot_date, connection_count)
+        VALUES (?, ?)
+    """, (snapshot_date, connection_count))
