@@ -110,10 +110,11 @@ def detect_job_changes(conn, email_map):
                 and current["position"] == prev["position"]):
             continue  # no change
 
+        email = current.get("email", "")
         entry = {
             "name": f"{current['first_name']} {current['last_name']}".strip(),
             "linkedin_url": url,
-            "email": current.get("email", ""),
+            "email": email,
             "old_company": prev["company"],
             "old_position": prev["position"],
             "new_company": current["company"],
@@ -122,8 +123,7 @@ def detect_job_changes(conn, email_map):
             "suggested_outreach_date": outreach_date,
         }
 
-        email = current.get("email", "")
-        contact_id = email_map.get(email) if email else None
+        contact_id = email_map.get(email.lower()) if email else None
 
         if contact_id:
             entry["contact_id"] = contact_id
