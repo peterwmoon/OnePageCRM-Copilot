@@ -113,11 +113,56 @@ def sync_opcrm(config, conn=None):
                 db.upsert_action(conn, action)
                 actions_synced += 1
 
+        # Sync pipelines and deals
+        stage_lookup = {}  # stage_id -> {name, pipeline_id, pipeline_name}
+        for pipeline in opcrm.fetch_all_pipelines(config):
+            db.upsert_pipeline(conn, {
+                "id": pipeline["id"],
+                "name": pipeline.get("name", ""),
+                "raw_json": json.dumps(pipeline),
+            })
+            for stage in pipeline.get("stages", []):
+                s = stage.get("stage", stage)
+                sid = s.get("id", "")
+                stage_lookup[sid] = {
+                    "name": s.get("name", ""),
+                    "pipeline_id": pipeline["id"],
+                    "pipeline_name": pipeline.get("name", ""),
+                }
+                db.upsert_pipeline_stage(conn, {
+                    "id": sid,
+                    "pipeline_id": pipeline["id"],
+                    "name": s.get("name", ""),
+                    "position": s.get("position", 0),
+                })
+
+        deals_synced = 0
+        for d in opcrm.fetch_all_deals(config):
+            stage_id = d.get("stage_id", "") or ""
+            stage_info = stage_lookup.get(stage_id, {})
+            db.upsert_deal(conn, {
+                "id": d["id"],
+                "name": d.get("name", ""),
+                "contact_id": d.get("contact_id", ""),
+                "pipeline_id": d.get("pipeline_id", stage_info.get("pipeline_id", "")),
+                "pipeline_name": stage_info.get("pipeline_name", ""),
+                "stage_id": stage_id,
+                "stage_name": stage_info.get("name", ""),
+                "status": d.get("status", ""),
+                "amount": d.get("amount") or 0.0,
+                "currency": d.get("currency", ""),
+                "close_date": d.get("close_date", ""),
+                "owner_id": d.get("owner_id", ""),
+                "raw_json": json.dumps(d),
+            })
+            deals_synced += 1
+
         db.log_sync(conn, "opcrm", len(raw_contacts), actions_synced)
         conn.commit()
         return {
             "contacts_synced": len(raw_contacts),
             "actions_synced": actions_synced,
+            "deals_synced": deals_synced,
             "error": None,
             "note": "Run sync_history() to sync notes, calls, and meetings (slower).",
         }

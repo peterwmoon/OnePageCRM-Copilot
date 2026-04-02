@@ -434,6 +434,49 @@ def cluster_contacts(by: str) -> dict:
         return {"error": "Invalid value for 'by'. Use 'tag', 'company', or 'cadence_status'."}
 
 
+# ── Read tools — deals ─────────────────────────────────────────────────────────
+
+@mcp.tool()
+def list_pipelines() -> list:
+    """
+    Return all sales pipelines with their stages in order.
+    Useful for understanding the deal structure before querying deals.
+    """
+    return db.list_pipelines_with_stages(_conn)
+
+
+@mcp.tool()
+def list_deals(status: str = "") -> list:
+    """
+    Return all deals. Optionally filter by status: 'pending', 'won', or 'lost'.
+    Leave status empty to return all deals regardless of status.
+    Each deal includes pipeline name, stage name, amount, close date, and linked contact ID.
+    """
+    return db.list_deals(_conn, status or None)
+
+
+@mcp.tool()
+def get_deals_for_contact(id_or_name: str) -> list:
+    """
+    Return all deals linked to a contact. Accepts contact ID or partial name.
+    """
+    contact = db.get_contact_by_id(_conn, id_or_name)
+    if contact is None:
+        matches = db.search_contacts(_conn, id_or_name)
+        if not matches:
+            return [{"error": f"No contact found matching '{id_or_name}'"}]
+        if len(matches) > 1:
+            return [{
+                "multiple_matches": [
+                    {"id": m["id"], "name": m["name"], "company": m["company"]}
+                    for m in matches
+                ],
+                "message": "Multiple contacts matched. Use a specific contact ID."
+            }]
+        contact = db.get_contact_by_id(_conn, matches[0]["id"])
+    return db.get_deals_for_contact(_conn, contact["id"])
+
+
 # ── Write tools ────────────────────────────────────────────────────────────────
 
 @mcp.tool()

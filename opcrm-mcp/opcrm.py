@@ -119,6 +119,35 @@ def fetch_all_meetings(config):
     return _fetch_all_pages(config, "meetings.json", "meetings")
 
 
+def fetch_all_deals(config):
+    """Fetch all deals. Handles OnePageCRM's variable response shapes for this endpoint."""
+    r = requests.get(
+        f"{BASE}/deals.json",
+        auth=_auth(config),
+        params={"per_page": 100},
+        timeout=30,
+    )
+    r.raise_for_status()
+    body = r.json()
+    # OnePageCRM returns deals in one of three shapes (mirroring Copilot dashboard logic)
+    if isinstance(body.get("data"), list):
+        raw_deals = body["data"]
+    elif isinstance(body.get("data"), dict):
+        raw_deals = body["data"].get("deals", [])
+    else:
+        raw_deals = body.get("deals", [])
+    return [d.get("deal", d) for d in raw_deals]
+
+
+def fetch_all_pipelines(config):
+    """Fetch all pipelines including their stages."""
+    r = requests.get(f"{BASE}/pipelines.json", auth=_auth(config), timeout=30)
+    r.raise_for_status()
+    data = r.json().get("data", {})
+    pipelines = data.get("pipelines", []) if isinstance(data, dict) else data
+    return [p.get("pipeline", p) for p in pipelines]
+
+
 def create_note(config, contact_id, text):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     r = requests.post(

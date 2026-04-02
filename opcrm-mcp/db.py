@@ -122,6 +122,39 @@ CREATE INDEX IF NOT EXISTS idx_unmatched_date ON unmatched_emails(date);
 CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_datetime);
 CREATE INDEX IF NOT EXISTS idx_calendar_event_contacts_contact ON calendar_event_contacts(contact_id);
 
+CREATE TABLE IF NOT EXISTS pipelines (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    raw_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_stages (
+    id TEXT PRIMARY KEY,
+    pipeline_id TEXT,
+    name TEXT,
+    position INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS deals (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    contact_id TEXT,
+    pipeline_id TEXT,
+    pipeline_name TEXT,
+    stage_id TEXT,
+    stage_name TEXT,
+    status TEXT,
+    amount REAL,
+    currency TEXT,
+    close_date TEXT,
+    owner_id TEXT,
+    raw_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_deals_contact_id ON deals(contact_id);
+CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status);
+CREATE INDEX IF NOT EXISTS idx_deals_pipeline_id ON deals(pipeline_id);
+
 CREATE TABLE IF NOT EXISTS linkedin_connections (
     linkedin_url TEXT NOT NULL,
     snapshot_date TEXT NOT NULL,
@@ -476,6 +509,72 @@ def get_unknown_contact_candidates(conn, min_emails=2, limit=None):
         {f"LIMIT {limit}" if limit else ""}
     """, (min_emails,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def upsert_pipeline(conn, p):
+    conn.execute("""
+        INSERT INTO pipelines (id, name, raw_json)
+        VALUES (:id, :name, :raw_json)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, raw_json=excluded.raw_json
+    """, p)
+
+
+def upsert_pipeline_stage(conn, s):
+    conn.execute("""
+        INSERT INTO pipeline_stages (id, pipeline_id, name, position)
+        VALUES (:id, :pipeline_id, :name, :position)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, position=excluded.position
+    """, s)
+
+
+def upsert_deal(conn, d):
+    conn.execute("""
+        INSERT INTO deals (id, name, contact_id, pipeline_id, pipeline_name,
+                           stage_id, stage_name, status, amount, currency,
+                           close_date, owner_id, raw_json)
+        VALUES (:id, :name, :contact_id, :pipeline_id, :pipeline_name,
+                :stage_id, :stage_name, :status, :amount, :currency,
+                :close_date, :owner_id, :raw_json)
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name, contact_id=excluded.contact_id,
+            pipeline_id=excluded.pipeline_id, pipeline_name=excluded.pipeline_name,
+            stage_id=excluded.stage_id, stage_name=excluded.stage_name,
+            status=excluded.status, amount=excluded.amount, currency=excluded.currency,
+            close_date=excluded.close_date, owner_id=excluded.owner_id,
+            raw_json=excluded.raw_json
+    """, d)
+
+
+def list_deals(conn, status=None):
+    if status:
+        rows = conn.execute(
+            "SELECT * FROM deals WHERE status = ? ORDER BY close_date", (status,)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM deals ORDER BY close_date").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_deals_for_contact(conn, contact_id):
+    rows = conn.execute(
+        "SELECT * FROM deals WHERE contact_id = ? ORDER BY close_date",
+        (contact_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_pipelines_with_stages(conn):
+    pipelines = conn.execute("SELECT * FROM pipelines ORDER BY name").fetchall()
+    result = []
+    for p in pipelines:
+        stages = conn.execute(
+            "SELECT * FROM pipeline_stages WHERE pipeline_id = ? ORDER BY position",
+            (p["id"],)
+        ).fetchall()
+        entry = dict(p)
+        entry["stages"] = [dict(s) for s in stages]
+        result.append(entry)
+    return result
 
 
 def insert_linkedin_connection(conn, c, snapshot_date):
