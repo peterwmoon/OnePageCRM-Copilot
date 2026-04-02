@@ -140,12 +140,17 @@ def fetch_all_deals(config):
 
 
 def fetch_all_pipelines(config):
-    """Fetch all pipelines including their stages."""
+    """Fetch all pipelines including their stages. Handles variable response shapes."""
     r = requests.get(f"{BASE}/pipelines.json", auth=_auth(config), timeout=30)
     r.raise_for_status()
-    data = r.json().get("data", {})
-    pipelines = data.get("pipelines", []) if isinstance(data, dict) else data
-    return [p.get("pipeline", p) for p in pipelines]
+    body = r.json()
+    if isinstance(body.get("data"), list):
+        raw = body["data"]
+    elif isinstance(body.get("data"), dict):
+        raw = body["data"].get("pipelines", [])
+    else:
+        raw = body.get("pipelines", [])
+    return [p.get("pipeline", p) for p in raw if isinstance(p, dict)]
 
 
 def create_note(config, contact_id, text):

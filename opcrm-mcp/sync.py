@@ -116,28 +116,46 @@ def sync_opcrm(config, conn=None):
         # Sync pipelines and deals
         stage_lookup = {}  # stage_id -> {name, pipeline_id, pipeline_name}
         for pipeline in opcrm.fetch_all_pipelines(config):
+            if not isinstance(pipeline, dict):
+                continue
+            pipeline_id = pipeline.get("id", "")
+            if not pipeline_id:
+                continue
             db.upsert_pipeline(conn, {
-                "id": pipeline["id"],
+                "id": pipeline_id,
                 "name": pipeline.get("name", ""),
                 "raw_json": json.dumps(pipeline),
             })
-            for stage in pipeline.get("stages", []):
-                s = stage.get("stage", stage)
+            # OnePageCRM may use "stages" or "pipeline_stages" as the key
+            stages_raw = pipeline.get("stages") or pipeline.get("pipeline_stages") or []
+            if not isinstance(stages_raw, list):
+                stages_raw = []
+            for stage_raw in stages_raw:
+                if not isinstance(stage_raw, dict):
+                    continue
+                # Stage may be wrapped as {"stage": {...}} or {"pipeline_stage": {...}}
+                s = stage_raw.get("stage") or stage_raw.get("pipeline_stage") or stage_raw
+                if not isinstance(s, dict):
+                    continue
                 sid = s.get("id", "")
+                if not sid:
+                    continue
                 stage_lookup[sid] = {
                     "name": s.get("name", ""),
-                    "pipeline_id": pipeline["id"],
+                    "pipeline_id": pipeline_id,
                     "pipeline_name": pipeline.get("name", ""),
                 }
                 db.upsert_pipeline_stage(conn, {
                     "id": sid,
-                    "pipeline_id": pipeline["id"],
+                    "pipeline_id": pipeline_id,
                     "name": s.get("name", ""),
                     "position": s.get("position", 0),
                 })
 
         deals_synced = 0
         for d in opcrm.fetch_all_deals(config):
+            if not isinstance(d, dict):
+                continue
             stage_id = d.get("stage_id", "") or ""
             stage_info = stage_lookup.get(stage_id, {})
             db.upsert_deal(conn, {

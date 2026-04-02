@@ -39,9 +39,8 @@ def test_sync_opcrm_inserts_contact():
     conn = make_db()
     with patch("opcrm.fetch_all_contacts", return_value=[RAW_CONTACT]), \
          patch("opcrm.fetch_next_actions", return_value=[]), \
-         patch("opcrm.fetch_notes", return_value=[]), \
-         patch("opcrm.fetch_calls", return_value=[]), \
-         patch("opcrm.fetch_meetings", return_value=[]):
+         patch("opcrm.fetch_all_pipelines", return_value=[]), \
+         patch("opcrm.fetch_all_deals", return_value=[]):
         result = sync.sync_opcrm(CONFIG, conn=conn)
 
     conn.commit()
@@ -56,9 +55,8 @@ def test_sync_opcrm_inserts_tags():
     conn = make_db()
     with patch("opcrm.fetch_all_contacts", return_value=[RAW_CONTACT]), \
          patch("opcrm.fetch_next_actions", return_value=[]), \
-         patch("opcrm.fetch_notes", return_value=[]), \
-         patch("opcrm.fetch_calls", return_value=[]), \
-         patch("opcrm.fetch_meetings", return_value=[]):
+         patch("opcrm.fetch_all_pipelines", return_value=[]), \
+         patch("opcrm.fetch_all_deals", return_value=[]):
         sync.sync_opcrm(CONFIG, conn=conn)
 
     conn.commit()
@@ -94,7 +92,7 @@ def test_sync_graph_matches_email_to_contact():
     assert row is not None
     assert row["contact_id"] == "c1"
     assert row["direction"] == "in"
-    assert result["emails_synced"] == 1
+    assert result["emails_matched"] == 1
 
 
 def test_sync_graph_discards_unmatched_email():
