@@ -11,6 +11,7 @@ import time
 
 import auth
 import db
+import linkedin as li
 import sync as sync_module
 import write_helpers
 
@@ -78,6 +79,69 @@ def find_unknown_contacts(min_emails: int = 2, limit: int = 0) -> list:
     Use this to discover contacts missing from OnePageCRM.
     """
     return db.get_unknown_contact_candidates(_conn, min_emails=min_emails, limit=limit or None)
+
+
+@mcp.tool()
+def detect_job_changes() -> dict:
+    """
+    Compare the two most recent LinkedIn connection snapshots to find people who changed jobs.
+    Returns two lists:
+      - changes: people matched to CRM contacts, with suggested outreach dates
+      - not_in_crm: changed connections not found in your CRM
+    Run linkedin_import.py first to populate snapshots. Requires at least two imports.
+    """
+    email_map = {
+        row["email"].lower(): row["id"]
+        for row in _conn.execute(
+            "SELECT id, email FROM contacts WHERE email != ''"
+        ).fetchall()
+    }
+    result = li.detect_job_changes(_conn, email_map)
+    if result is None:
+        return {
+            "message": (
+                "Only one LinkedIn snapshot exists — run linkedin_import.py again "
+                "in ~3 months to detect changes."
+            )
+        }
+    return result
+
+
+@mcp.tool()
+def create_job_change_action(
+    contact_id: str,
+    detected_date: str,
+    new_company: str,
+    confirmed: bool = False,
+) -> dict:
+    """
+    Create a follow-up next action for a contact who changed jobs.
+    The action is due 90 days after detected_date.
+    Call with confirmed=False first to preview, then confirmed=True to execute.
+
+    contact_id:    CRM contact ID (from detect_job_changes output).
+    detected_date: YYYY-MM-DD date the job change was detected (from detect_job_changes).
+    new_company:   The contact's new company name (from detect_job_changes).
+    """
+    from datetime import date, timedelta
+
+    contact = db.get_contact_by_id(_conn, contact_id)
+    if contact is None:
+        return {"error": f"Contact {contact_id} not found. Run sync first."}
+
+    try:
+        due_date = (
+            date.fromisoformat(detected_date) + timedelta(days=90)
+        ).isoformat()
+    except ValueError:
+        return {
+            "error": f"Invalid detected_date '{detected_date}'. Use YYYY-MM-DD format."
+        }
+
+    text = f"Job change follow-up — {contact['name']} moved to {new_company}"
+    return write_helpers.create_next_action(
+        _config, _conn, contact_id, text, due_date, confirmed
+    )
 
 
 @mcp.tool()
