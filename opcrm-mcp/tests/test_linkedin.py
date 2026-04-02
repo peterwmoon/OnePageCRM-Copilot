@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import db
+import linkedin as li
 
 
 def make_conn():
@@ -73,3 +74,55 @@ def test_log_linkedin_import_inserts_row():
     row = conn.execute("SELECT * FROM linkedin_import_log").fetchone()
     assert row["snapshot_date"] == "2026-01-01"
     assert row["connection_count"] == 42
+
+
+# ── CSV parsing tests ─────────────────────────────────────────────────────────
+
+SAMPLE_CSV_CLEAN = """First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Jane,Smith,https://linkedin.com/in/janesmith,jane@example.com,Acme Corp,VP Sales,01 Jan 2023
+Bob,Jones,https://linkedin.com/in/bobjones,,Globex,Engineer,15 Mar 2022
+"""
+
+SAMPLE_CSV_WITH_PREAMBLE = """Notes: To protect our members' privacy, we limit profile viewing.
+
+First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Jane,Smith,https://linkedin.com/in/janesmith,jane@example.com,Acme Corp,VP Sales,01 Jan 2023
+"""
+
+
+def test_parse_connections_csv_basic():
+    result = li.parse_connections_csv(SAMPLE_CSV_CLEAN)
+    assert len(result) == 2
+    assert result[0]["linkedin_url"] == "https://linkedin.com/in/janesmith"
+    assert result[0]["first_name"] == "Jane"
+    assert result[0]["last_name"] == "Smith"
+    assert result[0]["email"] == "jane@example.com"
+    assert result[0]["company"] == "Acme Corp"
+    assert result[0]["position"] == "VP Sales"
+    assert result[0]["connected_on"] == "01 Jan 2023"
+
+
+def test_parse_connections_csv_missing_email():
+    result = li.parse_connections_csv(SAMPLE_CSV_CLEAN)
+    bob = next(r for r in result if r["first_name"] == "Bob")
+    assert bob["email"] == ""
+
+
+def test_parse_connections_csv_skips_preamble():
+    result = li.parse_connections_csv(SAMPLE_CSV_WITH_PREAMBLE)
+    assert len(result) == 1
+    assert result[0]["first_name"] == "Jane"
+
+
+def test_parse_connections_csv_skips_rows_without_url():
+    csv = """First Name,Last Name,URL,Email Address,Company,Position,Connected On
+Jane,Smith,,jane@example.com,Acme Corp,VP Sales,01 Jan 2023
+"""
+    result = li.parse_connections_csv(csv)
+    assert len(result) == 0
+
+
+def test_parse_connections_csv_raises_if_no_header():
+    import pytest
+    with pytest.raises(ValueError, match="header"):
+        li.parse_connections_csv("This file has no CSV header at all.\n")
