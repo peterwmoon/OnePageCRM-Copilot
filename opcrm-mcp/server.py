@@ -4,7 +4,7 @@ OnePageCRM Copilot MCP Server
 Run with: python server.py
 Configure Claude Desktop to connect via stdio.
 """
-from datetime import date
+from datetime import date, timedelta
 from mcp.server.fastmcp import FastMCP
 
 import time
@@ -123,8 +123,6 @@ def create_job_change_action(
     detected_date: YYYY-MM-DD date the job change was detected (from detect_job_changes).
     new_company:   The contact's new company name (from detect_job_changes).
     """
-    from datetime import date, timedelta
-
     contact = db.get_contact_by_id(_conn, contact_id)
     if contact is None:
         return {"error": f"Contact {contact_id} not found. Run sync first."}
