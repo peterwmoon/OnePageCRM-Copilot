@@ -126,3 +126,113 @@ Jane,Smith,,jane@example.com,Acme Corp,VP Sales,01 Jan 2023
 def test_parse_connections_csv_raises_if_no_header():
     with pytest.raises(ValueError, match="header"):
         li.parse_connections_csv("This file has no CSV header at all.\n")
+
+
+# ── Change detection tests ────────────────────────────────────────────────────
+
+def _seed_snapshot(conn, snapshot_date, rows):
+    """Insert rows into linkedin_connections for a given snapshot date."""
+    for r in rows:
+        db.insert_linkedin_connection(conn, r, snapshot_date)
+    conn.commit()
+
+
+JANE = {
+    "linkedin_url": "https://linkedin.com/in/janesmith",
+    "first_name": "Jane", "last_name": "Smith",
+    "email": "jane@example.com",
+    "company": "Acme Corp", "position": "VP Sales",
+    "connected_on": "01 Jan 2023",
+}
+
+JANE_NEW_JOB = {**JANE, "company": "Globex", "position": "Chief Revenue Officer"}
+
+BOB = {
+    "linkedin_url": "https://linkedin.com/in/bobjones",
+    "first_name": "Bob", "last_name": "Jones",
+    "email": "",  # no email
+    "company": "Initech", "position": "Engineer",
+    "connected_on": "15 Mar 2022",
+}
+
+BOB_NEW_JOB = {**BOB, "company": "Megacorp", "position": "Senior Engineer"}
+
+
+def test_detect_job_changes_returns_none_with_one_snapshot():
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [JANE])
+    result = li.detect_job_changes(conn, {})
+    assert result is None
+
+
+def test_detect_job_changes_finds_changed_contact_in_crm():
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [JANE])
+    _seed_snapshot(conn, "2026-04-01", [JANE_NEW_JOB])
+    email_map = {"jane@example.com": "contact-123"}
+
+    result = li.detect_job_changes(conn, email_map)
+
+    assert len(result["changes"]) == 1
+    change = result["changes"][0]
+    assert change["contact_id"] == "contact-123"
+    assert change["old_company"] == "Acme Corp"
+    assert change["new_company"] == "Globex"
+    assert change["detected_date"] == "2026-04-01"
+    assert change["suggested_outreach_date"] == "2026-06-30"
+    assert len(result["not_in_crm"]) == 0
+
+
+def test_detect_job_changes_no_email_goes_to_not_in_crm():
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [BOB])
+    _seed_snapshot(conn, "2026-04-01", [BOB_NEW_JOB])
+
+    result = li.detect_job_changes(conn, {})
+
+    assert len(result["changes"]) == 0
+    assert len(result["not_in_crm"]) == 1
+    assert result["not_in_crm"][0]["new_company"] == "Megacorp"
+
+
+def test_detect_job_changes_no_change_excluded():
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [JANE])
+    _seed_snapshot(conn, "2026-04-01", [JANE])  # same data
+    email_map = {"jane@example.com": "contact-123"}
+
+    result = li.detect_job_changes(conn, email_map)
+
+    assert len(result["changes"]) == 0
+    assert len(result["not_in_crm"]) == 0
+
+
+def test_detect_job_changes_new_connection_excluded():
+    """Someone who only appears in the latest snapshot (new connection) is not a job change."""
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [JANE])
+    _seed_snapshot(conn, "2026-04-01", [JANE, BOB_NEW_JOB])
+
+    result = li.detect_job_changes(conn, {"jane@example.com": "contact-123"})
+
+    # Bob only appears in latest snapshot — not a job change
+    assert all(c["linkedin_url"] != BOB["linkedin_url"] for c in result["changes"])
+    assert all(c["linkedin_url"] != BOB["linkedin_url"] for c in result["not_in_crm"])
+
+
+def test_detect_job_changes_unmatched_email_goes_to_not_in_crm():
+    """Contact with email that doesn't match any CRM contact goes to not_in_crm."""
+    conn = make_conn()
+    db.init_db(conn)
+    _seed_snapshot(conn, "2026-01-01", [JANE])
+    _seed_snapshot(conn, "2026-04-01", [JANE_NEW_JOB])
+
+    result = li.detect_job_changes(conn, {})  # empty email_map — no CRM contacts
+
+    assert len(result["changes"]) == 0
+    assert len(result["not_in_crm"]) == 1
