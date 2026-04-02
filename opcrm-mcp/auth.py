@@ -63,9 +63,10 @@ def _refresh_token(config, config_path=None):
             **_client_params(config),
             "grant_type": "refresh_token",
             "refresh_token": config["graph_refresh_token"],
-            "scope": "Mail.Read User.Read offline_access",
+            "scope": "Mail.Read Calendars.Read User.Read offline_access",
         },
     )
+    print(r.json())
     r.raise_for_status()
     data = r.json()
     config["graph_access_token"] = data["access_token"]
@@ -80,7 +81,7 @@ def _run_device_flow(config, config_path=None):
         f"https://login.microsoftonline.com/{config['graph_tenant_id']}/oauth2/v2.0/devicecode",
         data={
             "client_id": config["graph_client_id"],
-            "scope": "Mail.Read User.Read offline_access",
+            "scope": "Mail.Read Calendars.Read User.Read offline_access",
         },
     )
     r.raise_for_status()

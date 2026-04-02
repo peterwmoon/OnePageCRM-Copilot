@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import auth
 import db
@@ -314,13 +314,12 @@ def sync_calendar(config, conn=None, since_date=None, until_date=None):
                 for a in evt.get("attendees", [])
                 if a.get("emailAddress", {}).get("address")
             ]
-            # Match to a contact if organizer or any attendee is in CRM
-            contact_id = email_map.get(organizer)
-            if not contact_id:
-                for addr in attendees:
-                    if addr in email_map:
-                        contact_id = addr
-                        break
+            # Collect all matching CRM contacts (organizer + all attendees)
+            contact_ids = []
+            for addr in [organizer] + attendees:
+                cid = email_map.get(addr)
+                if cid and cid not in contact_ids:
+                    contact_ids.append(cid)
 
             db.upsert_calendar_event(conn, {
                 "id": evt["id"],
@@ -330,8 +329,9 @@ def sync_calendar(config, conn=None, since_date=None, until_date=None):
                 "organizer_email": organizer,
                 "attendees": json.dumps(attendees),
                 "body_preview": evt.get("bodyPreview", ""),
-                "contact_id": contact_id,
+                "contact_id": contact_ids[0] if contact_ids else None,
             })
+            db.upsert_calendar_event_contacts(conn, evt["id"], contact_ids)
             inserted += 1
 
         db.log_sync(conn, "calendar", 0, inserted)

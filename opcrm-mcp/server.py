@@ -69,15 +69,15 @@ def sync_calendar() -> dict:
 
 
 @mcp.tool()
-def find_unknown_contacts(min_emails: int = 2, limit: int = 50) -> list:
+def find_unknown_contacts(min_emails: int = 2, limit: int = 0) -> list:
     """
     Return people who have emailed you but are not in your CRM.
     Grouped by sender address, sorted by frequency. Filters out automated senders.
     min_emails: minimum number of emails to be included (default 2).
-    limit: max results to return (default 50).
+    limit: max results (default 0 = no limit).
     Use this to discover contacts missing from OnePageCRM.
     """
-    return db.get_unknown_contact_candidates(_conn, min_emails=min_emails, limit=limit)
+    return db.get_unknown_contact_candidates(_conn, min_emails=min_emails, limit=limit or None)
 
 
 @mcp.tool()
@@ -93,7 +93,7 @@ def start_graph_auth() -> dict:
         f"https://login.microsoftonline.com/{_config['graph_tenant_id']}/oauth2/v2.0/devicecode",
         data={
             "client_id": _config["graph_client_id"],
-            "scope": "Mail.Read User.Read offline_access",
+            "scope": "Mail.Read Calendars.Read User.Read offline_access",
         },
     )
     r.raise_for_status()

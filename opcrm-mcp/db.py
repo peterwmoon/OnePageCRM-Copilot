@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     contact_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS calendar_event_contacts (
+    event_id TEXT NOT NULL,
+    contact_id TEXT NOT NULL,
+    PRIMARY KEY (event_id, contact_id)
+);
+
 CREATE TABLE IF NOT EXISTS sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -114,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_next_actions_contact_id ON next_actions(contact_i
 CREATE INDEX IF NOT EXISTS idx_unmatched_from ON unmatched_emails(from_address);
 CREATE INDEX IF NOT EXISTS idx_unmatched_date ON unmatched_emails(date);
 CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_datetime);
+CREATE INDEX IF NOT EXISTS idx_calendar_event_contacts_contact ON calendar_event_contacts(contact_id);
 """
 
 
@@ -128,12 +135,18 @@ def get_conn(db_path=None):
 
 def init_db(conn_or_path=None):
     """Create schema. Accepts a connection (for tests) or a path string."""
-    if isinstance(conn_or_path, sqlite3.Connection):
-        conn_or_path.executescript(SCHEMA)
-        return
-    conn = get_conn(conn_or_path)
+    owns_conn = not isinstance(conn_or_path, sqlite3.Connection)
+    conn = get_conn(conn_or_path) if owns_conn else conn_or_path
     conn.executescript(SCHEMA)
-    conn.close()
+    # Migrate: backfill junction table from legacy contact_id column
+    conn.execute("""
+        INSERT OR IGNORE INTO calendar_event_contacts (event_id, contact_id)
+        SELECT id, contact_id FROM calendar_events
+        WHERE contact_id IS NOT NULL AND contact_id != ''
+    """)
+    conn.commit()
+    if owns_conn:
+        conn.close()
 
 
 def upsert_contact(conn, c):
@@ -305,9 +318,15 @@ def get_contact_history(conn, contact_id, limit=50):
         SELECT 'email'   AS type, date, body_preview AS content, subject,
                direction, from_address
         FROM emails WHERE contact_id = ?
+        UNION ALL
+        SELECT 'calendar' AS type, ce.start_datetime AS date, ce.body_preview AS content, ce.subject,
+               NULL AS direction, ce.organizer_email AS from_address
+        FROM calendar_events ce
+        JOIN calendar_event_contacts cec ON cec.event_id = ce.id
+        WHERE cec.contact_id = ?
         ORDER BY date DESC
         LIMIT ?
-    """, (contact_id, contact_id, contact_id, contact_id, limit)).fetchall()
+    """, (contact_id, contact_id, contact_id, contact_id, contact_id, limit)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -370,6 +389,15 @@ def upsert_calendar_event(conn, e):
     """, e)
 
 
+def upsert_calendar_event_contacts(conn, event_id, contact_ids):
+    """Link a calendar event to all matching CRM contacts."""
+    for contact_id in contact_ids:
+        conn.execute(
+            "INSERT OR IGNORE INTO calendar_event_contacts (event_id, contact_id) VALUES (?, ?)",
+            (event_id, contact_id),
+        )
+
+
 def get_last_sync_time(conn, source):
     """Return ISO timestamp of last successful sync for source, or None."""
     row = conn.execute("""
@@ -380,32 +408,52 @@ def get_last_sync_time(conn, source):
     return row["last_synced_at"] if row else None
 
 
-def get_unknown_contact_candidates(conn, min_emails=2, limit=50):
+def get_unknown_contact_candidates(conn, min_emails=2, limit=None):
     """
-    Return inbound unmatched senders grouped by address, sorted by frequency.
-    Filters out obvious automated senders (noreply, mailer, etc.).
+    Return people not in the CRM who appear in unmatched emails — either as
+    inbound senders or as recipients of outbound sent mail.
+    Grouped by address, sorted by frequency. Filters automated senders.
     """
-    rows = conn.execute("""
-        SELECT from_address,
-               COUNT(*)    AS email_count,
-               MAX(date)   AS last_date,
-               MIN(date)   AS first_date
-        FROM unmatched_emails
-        WHERE direction = 'in'
-          AND from_address != ''
-          AND from_address NOT LIKE '%noreply%'
-          AND from_address NOT LIKE '%no-reply%'
-          AND from_address NOT LIKE '%donotreply%'
-          AND from_address NOT LIKE '%mailer%'
-          AND from_address NOT LIKE '%bounce%'
-          AND from_address NOT LIKE '%notification%'
-          AND from_address NOT LIKE '%alert%'
-          AND from_address NOT LIKE '%support@%'
-          AND from_address NOT LIKE '%info@%'
-          AND from_address NOT LIKE '%newsletter%'
-        GROUP BY from_address
-        HAVING COUNT(*) >= ?
+    noise_filters = """
+          AND address != ''
+          AND address NOT LIKE '%noreply%'
+          AND address NOT LIKE '%no-reply%'
+          AND address NOT LIKE '%donotreply%'
+          AND address NOT LIKE '%mailer%'
+          AND address NOT LIKE '%bounce%'
+          AND address NOT LIKE '%notification%'
+          AND address NOT LIKE '%alert%'
+          AND address NOT LIKE '%support@%'
+          AND address NOT LIKE '%info@%'
+          AND address NOT LIKE '%newsletter%'
+    """
+    rows = conn.execute(f"""
+        SELECT address,
+               SUM(cnt)    AS email_count,
+               MAX(last_date) AS last_date,
+               MIN(first_date) AS first_date
+        FROM (
+            SELECT from_address AS address,
+                   COUNT(*)     AS cnt,
+                   MAX(date)    AS last_date,
+                   MIN(date)    AS first_date
+            FROM unmatched_emails
+            WHERE direction = 'in'
+            GROUP BY from_address
+            UNION ALL
+            SELECT j.value AS address,
+                   COUNT(*)     AS cnt,
+                   MAX(ue.date) AS last_date,
+                   MIN(ue.date) AS first_date
+            FROM unmatched_emails ue, json_each(ue.to_addresses) j
+            WHERE ue.direction = 'out'
+            GROUP BY j.value
+        )
+        WHERE 1=1
+        {noise_filters}
+        GROUP BY address
+        HAVING SUM(cnt) >= ?
         ORDER BY email_count DESC, last_date DESC
-        LIMIT ?
-    """, (min_emails, limit)).fetchall()
+        {f"LIMIT {limit}" if limit else ""}
+    """, (min_emails,)).fetchall()
     return [dict(r) for r in rows]
