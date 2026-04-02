@@ -121,6 +121,25 @@ CREATE INDEX IF NOT EXISTS idx_unmatched_from ON unmatched_emails(from_address);
 CREATE INDEX IF NOT EXISTS idx_unmatched_date ON unmatched_emails(date);
 CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_datetime);
 CREATE INDEX IF NOT EXISTS idx_calendar_event_contacts_contact ON calendar_event_contacts(contact_id);
+
+CREATE TABLE IF NOT EXISTS linkedin_connections (
+    linkedin_url TEXT NOT NULL,
+    snapshot_date TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT,
+    company TEXT,
+    position TEXT,
+    connected_on TEXT,
+    PRIMARY KEY (linkedin_url, snapshot_date)
+);
+
+CREATE TABLE IF NOT EXISTS linkedin_import_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    imported_at TEXT DEFAULT (datetime('now')),
+    snapshot_date TEXT,
+    connection_count INTEGER DEFAULT 0
+);
 """
 
 

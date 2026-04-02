@@ -20,7 +20,9 @@ def test_init_creates_all_tables():
     ).fetchall()}
     assert tables == {
         "contacts", "contact_tags", "next_actions",
-        "notes", "calls", "meetings", "emails", "sync_log"
+        "notes", "calls", "meetings", "emails", "sync_log",
+        "unmatched_emails", "calendar_events", "calendar_event_contacts",
+        "linkedin_connections", "linkedin_import_log"
     }
 
 
