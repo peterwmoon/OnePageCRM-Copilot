@@ -66,7 +66,6 @@ def _refresh_token(config, config_path=None):
             "scope": "Mail.Read Calendars.Read User.Read offline_access",
         },
     )
-    print(r.json())
     r.raise_for_status()
     data = r.json()
     config["graph_access_token"] = data["access_token"]
