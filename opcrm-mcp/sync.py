@@ -114,7 +114,8 @@ def sync_opcrm(config, conn=None):
                 actions_synced += 1
 
         # Sync pipelines and deals
-        stage_lookup = {}  # stage_id -> {name, pipeline_id, pipeline_name}
+        # stage_lookup key: (pipeline_id, stage_num) — stage numbers repeat across pipelines
+        stage_lookup = {}
         for pipeline in opcrm.fetch_all_pipelines(config):
             if not isinstance(pipeline, dict):
                 continue
@@ -126,50 +127,46 @@ def sync_opcrm(config, conn=None):
                 "name": pipeline.get("name", ""),
                 "raw_json": json.dumps(pipeline),
             })
-            # OnePageCRM may use "stages" or "pipeline_stages" as the key
-            stages_raw = pipeline.get("stages") or pipeline.get("pipeline_stages") or []
+            # Stages are {"stage": <int>, "label": "<name>"} — the integer is the stage identifier
+            stages_raw = pipeline.get("stages") or []
             if not isinstance(stages_raw, list):
                 stages_raw = []
             for stage_raw in stages_raw:
                 if not isinstance(stage_raw, dict):
                     continue
-                # Stage may be wrapped as {"stage": {...}} or {"pipeline_stage": {...}}
-                s = stage_raw.get("stage") or stage_raw.get("pipeline_stage") or stage_raw
-                if not isinstance(s, dict):
+                stage_num = stage_raw.get("stage")
+                if stage_num is None:
                     continue
-                sid = s.get("id", "")
-                if not sid:
-                    continue
-                stage_lookup[sid] = {
-                    "name": s.get("name", ""),
-                    "pipeline_id": pipeline_id,
+                stage_lookup[(pipeline_id, stage_num)] = {
+                    "name": stage_raw.get("label", ""),
                     "pipeline_name": pipeline.get("name", ""),
                 }
                 db.upsert_pipeline_stage(conn, {
-                    "id": sid,
+                    "id": f"{pipeline_id}_{stage_num}",
                     "pipeline_id": pipeline_id,
-                    "name": s.get("name", ""),
-                    "position": s.get("position", 0),
+                    "name": stage_raw.get("label", ""),
+                    "position": stage_num,
                 })
 
         deals_synced = 0
         for d in opcrm.fetch_all_deals(config):
             if not isinstance(d, dict):
                 continue
-            stage_id = d.get("stage_id", "") or ""
-            stage_info = stage_lookup.get(stage_id, {})
+            deal_pipeline_id = d.get("pipeline_id", "")
+            stage_num = d.get("stage")  # integer, e.g. 1, 10, 30 — not "stage_id"
+            stage_info = stage_lookup.get((deal_pipeline_id, stage_num), {})
             db.upsert_deal(conn, {
                 "id": d["id"],
                 "name": d.get("name", ""),
                 "contact_id": d.get("contact_id", ""),
-                "pipeline_id": d.get("pipeline_id", stage_info.get("pipeline_id", "")),
+                "pipeline_id": deal_pipeline_id,
                 "pipeline_name": stage_info.get("pipeline_name", ""),
-                "stage_id": stage_id,
+                "stage_id": str(stage_num) if stage_num is not None else "",
                 "stage_name": stage_info.get("name", ""),
                 "status": d.get("status", ""),
                 "amount": d.get("amount") or 0.0,
                 "currency": d.get("currency", ""),
-                "close_date": d.get("close_date", ""),
+                "close_date": d.get("date", ""),  # OnePageCRM uses "date" not "close_date"
                 "owner_id": d.get("owner_id", ""),
                 "raw_json": json.dumps(d),
             })
