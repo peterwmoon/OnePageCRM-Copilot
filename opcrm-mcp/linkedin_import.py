@@ -74,7 +74,7 @@ def main():
             inserted += 1
 
     skipped = len(connections) - inserted
-    db.log_linkedin_import(conn, snapshot_date, inserted)
+    db.log_linkedin_import(conn, snapshot_date, len(connections))
     conn.commit()
     conn.close()
 
