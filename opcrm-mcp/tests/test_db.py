@@ -260,3 +260,69 @@ def test_get_notes_returns_notes():
     notes = db.get_notes(conn, "c1")
     assert len(notes) == 1
     assert notes[0]["text"] == "Met at conference"
+
+
+def test_get_actionable_emails_returns_emails_since_date():
+    conn = make_conn()
+    conn.execute("""
+        INSERT INTO unmatched_emails (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+        VALUES
+            ('e1', 'Invoice #100', 'Please pay...', '2026-03-28T10:00:00Z', 'in', 'billing@acme.com', '[]', 'c1'),
+            ('e2', 'Old invoice', 'Old stuff',    '2026-03-01T10:00:00Z', 'in', 'billing@acme.com', '[]', 'c2'),
+            ('e3', 'Meeting request', 'Let us meet', '2026-03-29T09:00:00Z', 'in', 'partner@firm.com', '[]', 'c3')
+    """)
+    conn.commit()
+    results = db.get_actionable_emails(conn, since='2026-03-26')
+    ids = [r['id'] for r in results]
+    assert 'e1' in ids
+    assert 'e3' in ids
+    assert 'e2' not in ids  # before since date
+
+
+def test_get_actionable_emails_filters_noise():
+    conn = make_conn()
+    conn.execute("""
+        INSERT INTO unmatched_emails (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+        VALUES
+            ('n1', 'Newsletter', 'Unsubscribe here', '2026-03-28T10:00:00Z', 'in', 'news@newsletter.com', '[]', 'c1'),
+            ('n2', 'Alert!',     'System alert',     '2026-03-28T11:00:00Z', 'in', 'noreply@system.com', '[]', 'c2'),
+            ('n3', 'Real email', 'Hey Peter',        '2026-03-28T12:00:00Z', 'in', 'alice@partner.com',  '[]', 'c3')
+    """)
+    conn.commit()
+    results = db.get_actionable_emails(conn, since='2026-03-26')
+    ids = [r['id'] for r in results]
+    assert 'n3' in ids
+    assert 'n1' not in ids
+    assert 'n2' not in ids
+
+
+def test_get_actionable_emails_sorted_most_recent_first():
+    conn = make_conn()
+    conn.execute("""
+        INSERT INTO unmatched_emails (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+        VALUES
+            ('d1', 'Earlier', 'body', '2026-03-27T08:00:00Z', 'in', 'alice@partner.com', '[]', 'c1'),
+            ('d2', 'Later',   'body', '2026-03-29T08:00:00Z', 'in', 'bob@partner.com',   '[]', 'c2')
+    """)
+    conn.commit()
+    results = db.get_actionable_emails(conn, since='2026-03-26')
+    assert results[0]['id'] == 'd2'
+    assert results[1]['id'] == 'd1'
+
+
+def test_get_actionable_emails_returns_expected_fields():
+    conn = make_conn()
+    conn.execute("""
+        INSERT INTO unmatched_emails (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+        VALUES ('f1', 'Invoice #200', 'Please remit', '2026-03-28T10:00:00Z', 'in', 'billing@vendor.com', '[]', 'c1')
+    """)
+    conn.commit()
+    results = db.get_actionable_emails(conn, since='2026-03-26')
+    assert len(results) == 1
+    r = results[0]
+    assert r['id'] == 'f1'
+    assert r['subject'] == 'Invoice #200'
+    assert r['body_preview'] == 'Please remit'
+    assert r['date'] == '2026-03-28T10:00:00Z'
+    assert r['from_address'] == 'billing@vendor.com'
+    assert r['direction'] == 'in'
