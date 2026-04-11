@@ -62,9 +62,12 @@ def sync_emails() -> dict:
     """
     result = sync_module.sync_graph(_config, conn=_conn)
     if _config.get("graph_refresh_token_personal"):
-        personal = sync_module.sync_graph_personal(_config, conn=_conn)
-        result["emails_matched_personal"] = personal["emails_matched"]
-        result["emails_unmatched_personal"] = personal["emails_unmatched"]
+        try:
+            personal = sync_module.sync_graph_personal(_config, conn=_conn)
+            result["emails_matched_personal"] = personal["emails_matched"]
+            result["emails_unmatched_personal"] = personal["emails_unmatched"]
+        except Exception as e:
+            result["personal_sync_error"] = str(e)
     return result
 
 
