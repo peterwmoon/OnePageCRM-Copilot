@@ -238,7 +238,7 @@ def sync_history(config, conn=None):
             conn.close()
 
 
-def _process_email_batch(msgs, email_map, conn):
+def _process_email_batch(msgs, email_map, conn, mailbox='work'):
     """Match a list of Graph messages to contacts; store matched and unmatched. Returns (matched, unmatched) counts."""
     matched = unmatched = 0
     for msg in msgs:
@@ -267,6 +267,7 @@ def _process_email_batch(msgs, email_map, conn):
                 "thread_id": msg.get("conversationId", ""),
                 "from_address": from_addr,
                 "to_addresses": json.dumps(to_addrs),
+                "mailbox": mailbox,
             })
             matched += 1
         else:
@@ -279,6 +280,7 @@ def _process_email_batch(msgs, email_map, conn):
                 "from_address": from_addr,
                 "to_addresses": json.dumps(to_addrs),
                 "conversation_id": msg.get("conversationId", ""),
+                "mailbox": mailbox,
             })
             unmatched += 1
     return matched, unmatched
@@ -330,6 +332,61 @@ def sync_graph(config, conn=None, since_date=None):
 
     except Exception as e:
         db.log_sync(conn, "graph", 0, 0, str(e))
+        conn.commit()
+        raise
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def sync_graph_personal(config, conn=None, since_date=None):
+    """
+    Sync personal Outlook emails (pmoon@live.com) incrementally. Uses last sync timestamp if since_date not given.
+    Matched emails go to emails table with mailbox='personal'; unmatched go to unmatched_emails.
+    """
+    import time
+    if not (config.get("graph_access_token_personal")
+            and config.get("graph_token_expiry_personal", 0) > time.time() + 60):
+        if not config.get("graph_refresh_token_personal"):
+            raise RuntimeError(
+                "Personal Outlook not authorized. Call start_graph_auth_personal() "
+                "then complete_graph_auth_personal() first."
+            )
+    token = auth.get_graph_token_personal(config)
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = db.get_conn()
+        db.init_db(conn)
+
+    try:
+        if since_date is None:
+            last = db.get_last_sync_time(conn, "graph_personal")
+            if last:
+                since_date = last.replace(" ", "T") + "Z"
+            else:
+                dt = datetime.now(timezone.utc) - timedelta(days=90)
+                since_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        rows = conn.execute("SELECT id, email FROM contacts WHERE email != ''").fetchall()
+        email_map = {row["email"].lower(): row["id"] for row in rows}
+
+        seen_ids = set()
+        all_msgs = []
+        for folder in ["me/messages", "me/mailFolders/sentItems/messages"]:
+            for msg in graph.fetch_emails(token, since_date=since_date, folder=folder):
+                if msg["id"] not in seen_ids:
+                    seen_ids.add(msg["id"])
+                    all_msgs.append(msg)
+
+        matched, unmatched = _process_email_batch(all_msgs, email_map, conn, mailbox="personal")
+
+        db.log_sync(conn, "graph_personal", 0, matched + unmatched)
+        conn.commit()
+        return {"emails_matched": matched, "emails_unmatched": unmatched, "since": since_date, "error": None}
+
+    except Exception as e:
+        db.log_sync(conn, "graph_personal", 0, 0, str(e))
         conn.commit()
         raise
     finally:

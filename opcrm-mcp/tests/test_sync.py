@@ -114,3 +114,102 @@ def test_sync_graph_discards_unmatched_email():
     conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
     assert count == 0
+
+
+PERSONAL_CONFIG = {
+    **CONFIG,
+    "graph_access_token_personal": "personal_tok",
+    "graph_token_expiry_personal": 9999999999,
+    "graph_refresh_token_personal": "personal_refresh",
+}
+
+
+def test_process_email_batch_tags_mailbox_personal():
+    conn = make_db()
+    db.upsert_contact(conn, {
+        "id": "c1", "name": "Jorge DN", "company": "Designs Northwest",
+        "email": "jorge@designsnw.com", "phone": "", "owner_id": "uid",
+        "status": "active", "cadence_months": 6, "raw_json": "{}"
+    })
+    conn.commit()
+    email_map = {"jorge@designsnw.com": "c1"}
+    msgs = [{
+        "id": "msg1", "subject": "Schedule update", "bodyPreview": "Hi Peter",
+        "receivedDateTime": "2026-03-15T10:00:00Z", "isDraft": False,
+        "from": {"emailAddress": {"address": "jorge@designsnw.com"}},
+        "toRecipients": [{"emailAddress": {"address": "pmoon@live.com"}}],
+        "conversationId": "conv1",
+    }]
+    sync._process_email_batch(msgs, email_map, conn, mailbox="personal")
+    conn.commit()
+    row = conn.execute("SELECT mailbox FROM emails WHERE id = 'msg1'").fetchone()
+    assert row[0] == "personal"
+
+
+def test_process_email_batch_defaults_mailbox_to_work():
+    conn = make_db()
+    db.upsert_contact(conn, {
+        "id": "c1", "name": "Alice Smith", "company": "Acme",
+        "email": "alice@acme.com", "phone": "", "owner_id": "uid",
+        "status": "active", "cadence_months": 6, "raw_json": "{}"
+    })
+    conn.commit()
+    email_map = {"alice@acme.com": "c1"}
+    msgs = [{
+        "id": "msg2", "subject": "Hi", "bodyPreview": "hey",
+        "receivedDateTime": "2026-03-01T10:00:00Z", "isDraft": False,
+        "from": {"emailAddress": {"address": "alice@acme.com"}},
+        "toRecipients": [{"emailAddress": {"address": "pmoon@navicet.com"}}],
+        "conversationId": "conv2",
+    }]
+    sync._process_email_batch(msgs, email_map, conn)  # no mailbox arg
+    conn.commit()
+    row = conn.execute("SELECT mailbox FROM emails WHERE id = 'msg2'").fetchone()
+    assert row[0] == "work"
+
+
+def test_sync_graph_personal_raises_without_tokens():
+    conn = make_db()
+    config = {k: v for k, v in CONFIG.items()}  # no personal tokens
+    try:
+        sync.sync_graph_personal(config, conn=conn)
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
+        assert "Personal Outlook not authorized" in str(e)
+
+
+def test_sync_graph_personal_logs_to_graph_personal_source():
+    conn = make_db()
+    with patch("auth.get_graph_token_personal", return_value="personal_tok"), \
+         patch("graph.fetch_emails", return_value=[]):
+        sync.sync_graph_personal(PERSONAL_CONFIG, conn=conn)
+    conn.commit()
+    row = conn.execute(
+        "SELECT source FROM sync_log ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row[0] == "graph_personal"
+
+
+def test_sync_graph_personal_stores_personal_mailbox():
+    conn = make_db()
+    db.upsert_contact(conn, {
+        "id": "c1", "name": "Jorge DN", "company": "Designs Northwest",
+        "email": "jorge@designsnw.com", "phone": "", "owner_id": "uid",
+        "status": "active", "cadence_months": 6, "raw_json": "{}"
+    })
+    conn.commit()
+
+    personal_email = {
+        "id": "pmsg1", "subject": "Schedule", "bodyPreview": "Hi Peter",
+        "receivedDateTime": "2026-03-15T10:00:00Z", "isDraft": False,
+        "from": {"emailAddress": {"address": "jorge@designsnw.com"}},
+        "toRecipients": [{"emailAddress": {"address": "pmoon@live.com"}}],
+        "conversationId": "pconv1",
+    }
+
+    with patch("auth.get_graph_token_personal", return_value="personal_tok"), \
+         patch("graph.fetch_emails", return_value=[personal_email]):
+        sync.sync_graph_personal(PERSONAL_CONFIG, conn=conn)
+
+    row = conn.execute("SELECT mailbox FROM emails WHERE id = 'pmsg1'").fetchone()
+    assert row[0] == "personal"
