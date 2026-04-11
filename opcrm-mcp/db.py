@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS emails (
     thread_id TEXT,
     from_address TEXT,
     to_addresses TEXT,
+    mailbox TEXT DEFAULT 'work',
     FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
@@ -83,7 +84,8 @@ CREATE TABLE IF NOT EXISTS unmatched_emails (
     direction TEXT,
     from_address TEXT,
     to_addresses TEXT,
-    conversation_id TEXT
+    conversation_id TEXT,
+    mailbox TEXT DEFAULT 'work'
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -190,6 +192,12 @@ def init_db(conn_or_path=None):
     owns_conn = not isinstance(conn_or_path, sqlite3.Connection)
     conn = get_conn(conn_or_path) if owns_conn else conn_or_path
     conn.executescript(SCHEMA)
+    # Migrate: add mailbox column to emails and unmatched_emails if not present
+    for table in ("emails", "unmatched_emails"):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN mailbox TEXT DEFAULT 'work'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     # Migrate: backfill junction table from legacy contact_id column
     conn.execute("""
         INSERT OR IGNORE INTO calendar_event_contacts (event_id, contact_id)
@@ -262,15 +270,17 @@ def upsert_action(conn, a):
 
 
 def upsert_email(conn, e):
+    row = {**e, "mailbox": e.get("mailbox", "work")}
     conn.execute("""
         INSERT INTO emails (id, contact_id, subject, body_preview, date,
-                            direction, thread_id, from_address, to_addresses)
+                            direction, thread_id, from_address, to_addresses, mailbox)
         VALUES (:id, :contact_id, :subject, :body_preview, :date,
-                :direction, :thread_id, :from_address, :to_addresses)
+                :direction, :thread_id, :from_address, :to_addresses, :mailbox)
         ON CONFLICT(id) DO UPDATE SET
             subject=excluded.subject, body_preview=excluded.body_preview,
-            date=excluded.date, direction=excluded.direction
-    """, e)
+            date=excluded.date, direction=excluded.direction,
+            mailbox=excluded.mailbox
+    """, row)
 
 
 def log_sync(conn, source, contacts_synced=0, records_synced=0, error=None):
@@ -419,14 +429,15 @@ def get_all_tags(conn):
 
 
 def upsert_unmatched_email(conn, e):
+    row = {**e, "mailbox": e.get("mailbox", "work")}
     conn.execute("""
         INSERT INTO unmatched_emails
-            (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id)
+            (id, subject, body_preview, date, direction, from_address, to_addresses, conversation_id, mailbox)
         VALUES
-            (:id, :subject, :body_preview, :date, :direction, :from_address, :to_addresses, :conversation_id)
+            (:id, :subject, :body_preview, :date, :direction, :from_address, :to_addresses, :conversation_id, :mailbox)
         ON CONFLICT(id) DO UPDATE SET
-            subject=excluded.subject, date=excluded.date
-    """, e)
+            subject=excluded.subject, date=excluded.date, mailbox=excluded.mailbox
+    """, row)
 
 
 def upsert_calendar_event(conn, e):
@@ -518,7 +529,7 @@ def get_actionable_emails(conn, since: str) -> list:
     Sorted by date descending. For use by Claude to identify actionable items.
     """
     rows = conn.execute("""
-        SELECT id, subject, body_preview, date, from_address, direction
+        SELECT id, subject, body_preview, date, from_address, direction, mailbox
         FROM unmatched_emails
         WHERE date >= ?
           AND from_address != ''

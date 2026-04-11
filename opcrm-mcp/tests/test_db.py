@@ -326,3 +326,100 @@ def test_get_actionable_emails_returns_expected_fields():
     assert r['date'] == '2026-03-28T10:00:00Z'
     assert r['from_address'] == 'billing@vendor.com'
     assert r['direction'] == 'in'
+
+
+def test_emails_table_has_mailbox_column():
+    conn = make_conn()
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(emails)").fetchall()}
+    assert "mailbox" in cols
+
+
+def test_unmatched_emails_table_has_mailbox_column():
+    conn = make_conn()
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
+    assert "mailbox" in cols
+
+
+def test_upsert_email_stores_mailbox():
+    conn = make_conn()
+    db.upsert_contact(conn, {
+        "id": "c1", "name": "Alice", "company": "", "email": "alice@acme.com",
+        "phone": "", "owner_id": "u1", "status": "active", "cadence_months": 6, "raw_json": "{}"
+    })
+    db.upsert_email(conn, {
+        "id": "e1", "contact_id": "c1", "subject": "Hi", "body_preview": "hey",
+        "date": "2026-01-01T00:00:00Z", "direction": "in", "thread_id": "t1",
+        "from_address": "alice@acme.com", "to_addresses": "[]", "mailbox": "personal"
+    })
+    conn.commit()
+    row = conn.execute("SELECT mailbox FROM emails WHERE id = 'e1'").fetchone()
+    assert row[0] == "personal"
+
+
+def test_upsert_email_defaults_mailbox_to_work():
+    conn = make_conn()
+    db.upsert_contact(conn, {
+        "id": "c1", "name": "Alice", "company": "", "email": "alice@acme.com",
+        "phone": "", "owner_id": "u1", "status": "active", "cadence_months": 6, "raw_json": "{}"
+    })
+    db.upsert_email(conn, {
+        "id": "e1", "contact_id": "c1", "subject": "Hi", "body_preview": "hey",
+        "date": "2026-01-01T00:00:00Z", "direction": "in", "thread_id": "t1",
+        "from_address": "alice@acme.com", "to_addresses": "[]"
+        # no mailbox key — should default to 'work'
+    })
+    conn.commit()
+    row = conn.execute("SELECT mailbox FROM emails WHERE id = 'e1'").fetchone()
+    assert row[0] == "work"
+
+
+def test_upsert_unmatched_email_stores_mailbox():
+    conn = make_conn()
+    db.upsert_unmatched_email(conn, {
+        "id": "u1", "subject": "Invoice", "body_preview": "attached",
+        "date": "2026-01-01T00:00:00Z", "direction": "in",
+        "from_address": "vendor@example.com", "to_addresses": "[]",
+        "conversation_id": "conv1", "mailbox": "personal"
+    })
+    conn.commit()
+    row = conn.execute("SELECT mailbox FROM unmatched_emails WHERE id = 'u1'").fetchone()
+    assert row[0] == "personal"
+
+
+def test_get_actionable_emails_returns_mailbox():
+    conn = make_conn()
+    db.upsert_unmatched_email(conn, {
+        "id": "u1", "subject": "Invoice", "body_preview": "attached",
+        "date": "2026-04-01T00:00:00Z", "direction": "in",
+        "from_address": "vendor@example.com", "to_addresses": "[]",
+        "conversation_id": "conv1", "mailbox": "personal"
+    })
+    conn.commit()
+    results = db.get_actionable_emails(conn, since="2026-01-01T00:00:00Z")
+    assert len(results) == 1
+    assert results[0]["mailbox"] == "personal"
+
+
+def test_mailbox_migration_adds_column_to_existing_db():
+    """Verify init_db adds mailbox via ALTER TABLE on a DB created without it."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE emails (
+            id TEXT PRIMARY KEY, contact_id TEXT NOT NULL, subject TEXT,
+            body_preview TEXT, date TEXT, direction TEXT,
+            thread_id TEXT, from_address TEXT, to_addresses TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE unmatched_emails (
+            id TEXT PRIMARY KEY, subject TEXT, body_preview TEXT, date TEXT,
+            direction TEXT, from_address TEXT, to_addresses TEXT, conversation_id TEXT
+        )
+    """)
+    conn.commit()
+    db.init_db(conn)
+    email_cols = {row[1] for row in conn.execute("PRAGMA table_info(emails)").fetchall()}
+    unmatched_cols = {row[1] for row in conn.execute("PRAGMA table_info(unmatched_emails)").fetchall()}
+    assert "mailbox" in email_cols
+    assert "mailbox" in unmatched_cols
