@@ -74,3 +74,63 @@ def test_get_graph_token_refreshes_expired_token(tmp_path):
 
     saved = auth.load_config(path)
     assert saved["graph_access_token"] == "new_token"
+
+
+def test_get_graph_token_work_still_uses_tenant_endpoint(tmp_path):
+    """After refactor, work account must still hit the tenant-specific endpoint."""
+    config, path = make_config(tmp_path)
+    config["graph_refresh_token"] = "work_refresh"
+    config["graph_token_expiry"] = time.time() - 1
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "access_token": "new_work_token",
+        "refresh_token": "new_refresh",
+        "expires_in": 3600,
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        token = auth.get_graph_token(config, path)
+
+    assert token == "new_work_token"
+    call_url = mock_post.call_args[0][0]
+    assert "tenant456" in call_url
+    assert "consumers" not in call_url
+
+
+def test_get_graph_token_personal_returns_valid_cached_token(tmp_path):
+    config, path = make_config(tmp_path)
+    config["graph_access_token_personal"] = "personal_tok"
+    config["graph_token_expiry_personal"] = time.time() + 3600
+    token = auth.get_graph_token_personal(config, path)
+    assert token == "personal_tok"
+
+
+def test_get_graph_token_personal_refreshes_expired_token(tmp_path):
+    config, path = make_config(tmp_path)
+    config["graph_access_token_personal"] = "old"
+    config["graph_refresh_token_personal"] = "personal_refresh"
+    config["graph_token_expiry_personal"] = time.time() - 1
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "access_token": "new_personal_token",
+        "refresh_token": "new_personal_refresh",
+        "expires_in": 3600,
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("requests.post", return_value=mock_response) as mock_post:
+        token = auth.get_graph_token_personal(config, path)
+
+    assert token == "new_personal_token"
+    call_url = mock_post.call_args[0][0]
+    assert "consumers" in call_url
+    assert "tenant456" not in call_url
+    call_data = mock_post.call_args[1]["data"]
+    assert call_data["grant_type"] == "refresh_token"
+    assert call_data["refresh_token"] == "personal_refresh"
+
+    saved = auth.load_config(path)
+    assert saved["graph_access_token_personal"] == "new_personal_token"
