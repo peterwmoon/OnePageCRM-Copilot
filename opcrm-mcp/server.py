@@ -24,6 +24,7 @@ _conn = db.get_conn()
 
 # In-progress Graph device flow (set by start_graph_auth, consumed by complete_graph_auth)
 _pending_device_flow: dict = {}
+_pending_device_flow_personal: dict = {}
 
 
 # ── Sync tools ─────────────────────────────────────────────────────────────────
@@ -52,12 +53,19 @@ def sync_history() -> dict:
 @mcp.tool()
 def sync_emails() -> dict:
     """
-    Incrementally sync Outlook emails since the last sync.
+    Incrementally sync Outlook emails since the last sync. Runs both work (pmoon@navicet.com)
+    and personal (pmoon@live.com) accounts if personal is authorized.
     Matched emails (sender/recipient in CRM) go to the emails table.
     Unmatched emails go to unmatched_emails for contact discovery.
     Requires Graph authorization — call start_graph_auth() first if needed.
+    For personal account, call start_graph_auth_personal() first.
     """
-    return sync_module.sync_graph(_config, conn=_conn)
+    result = sync_module.sync_graph(_config, conn=_conn)
+    if _config.get("graph_refresh_token_personal"):
+        personal = sync_module.sync_graph_personal(_config, conn=_conn)
+        result["emails_matched_personal"] = personal["emails_matched"]
+        result["emails_unmatched_personal"] = personal["emails_unmatched"]
+    return result
 
 
 @mcp.tool()
@@ -224,6 +232,74 @@ def complete_graph_auth() -> dict:
     if error == "authorization_pending":
         return {"status": "pending", "message": "Not yet authorized. Complete the steps in your browser, then call complete_graph_auth() again."}
     _pending_device_flow = {}
+    return {"error": f"Authorization failed: {data.get('error_description', error)}"}
+
+
+@mcp.tool()
+def start_graph_auth_personal() -> dict:
+    """
+    Begin Microsoft Graph authorization for the personal account (pmoon@live.com) via device code flow.
+    Returns a URL and a short code for the user to enter at that URL.
+    After the user completes authorization in their browser, call complete_graph_auth_personal().
+    """
+    import requests
+    global _pending_device_flow_personal
+    r = requests.post(
+        "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode",
+        data={
+            "client_id": _config["graph_client_id"],
+            "scope": "Mail.Read User.Read offline_access",
+        },
+    )
+    r.raise_for_status()
+    flow = r.json()
+    _pending_device_flow_personal = {
+        "device_code": flow["device_code"],
+        "interval": flow.get("interval", 5),
+        "expires_at": time.time() + flow.get("expires_in", 900),
+    }
+    return {
+        "action": "Visit the URL below and enter the code to authorize personal Outlook access (pmoon@live.com).",
+        "url": flow["verification_uri"],
+        "code": flow["user_code"],
+        "next_step": "After completing authorization in your browser, call complete_graph_auth_personal().",
+    }
+
+
+@mcp.tool()
+def complete_graph_auth_personal() -> dict:
+    """
+    Complete personal Microsoft Graph authorization after the user has entered the device code.
+    Call this after start_graph_auth_personal() once you've authorized in the browser.
+    """
+    import requests
+    global _pending_device_flow_personal
+    if not _pending_device_flow_personal:
+        return {"error": "No authorization in progress. Call start_graph_auth_personal() first."}
+    if time.time() > _pending_device_flow_personal["expires_at"]:
+        _pending_device_flow_personal = {}
+        return {"error": "Authorization code expired. Call start_graph_auth_personal() to restart."}
+
+    poll = requests.post(
+        "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
+        data={
+            "client_id": _config["graph_client_id"],
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "device_code": _pending_device_flow_personal["device_code"],
+        },
+    )
+    data = poll.json()
+    if "access_token" in data:
+        _config["graph_access_token_personal"] = data["access_token"]
+        _config["graph_refresh_token_personal"] = data.get("refresh_token", "")
+        _config["graph_token_expiry_personal"] = time.time() + data.get("expires_in", 3600)
+        auth.save_config(_config)
+        _pending_device_flow_personal = {}
+        return {"status": "authorized", "message": "Personal Outlook access granted. You can now call sync_emails()."}
+    error = data.get("error", "")
+    if error == "authorization_pending":
+        return {"status": "pending", "message": "Not yet authorized. Complete the steps in your browser, then call complete_graph_auth_personal() again."}
+    _pending_device_flow_personal = {}
     return {"error": f"Authorization failed: {data.get('error_description', error)}"}
 
 
