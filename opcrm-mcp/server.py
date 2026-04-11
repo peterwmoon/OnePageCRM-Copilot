@@ -81,20 +81,20 @@ def sync_calendar() -> dict:
 
 
 @mcp.tool()
-def get_actionable_emails(since: str) -> list:
+def get_actionable_emails(since: str, limit: int = 50) -> list:
     """
-    Return emails from non-CRM senders since `since` (ISO 8601 date or datetime,
+    Return inbound emails from non-CRM senders since `since` (ISO 8601 date or datetime,
     e.g. '2026-03-26' or '2026-03-26T00:00:00Z'), filtered to exclude automated
     senders (newsletters, noreply, alerts, etc.).
 
-    Returns a list of emails with: id, subject, body_preview, date, from_address, direction.
-    Sorted most recent first.
+    Returns a list of emails with: id, subject, body_preview, date, from_address, direction, mailbox.
+    Sorted most recent first. limit defaults to 50.
 
     Use this for daily review — pass the date you last ran this scan and Claude will
     identify invoices, meeting requests, and other actionable items from people
     outside your CRM. Call sync_emails() first to ensure the cache is fresh.
     """
-    return db.get_actionable_emails(_conn, since=since)
+    return db.get_actionable_emails(_conn, since=since, limit=limit)
 
 
 @mcp.tool()

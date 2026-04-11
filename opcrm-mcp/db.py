@@ -522,16 +522,18 @@ def get_unknown_contact_candidates(conn, min_emails=2, limit=None):
     return [dict(r) for r in rows]
 
 
-def get_actionable_emails(conn, since: str) -> list:
+def get_actionable_emails(conn, since: str, limit: int = 50) -> list:
     """
-    Return emails from non-CRM senders received since `since` (ISO 8601 string),
+    Return inbound emails from non-CRM senders received since `since` (ISO 8601 string),
     excluding automated senders (noreply, newsletters, alerts, etc.).
     Sorted by date descending. For use by Claude to identify actionable items.
+    limit: max results (default 50).
     """
-    rows = conn.execute("""
+    rows = conn.execute(f"""
         SELECT id, subject, body_preview, date, from_address, direction, mailbox
         FROM unmatched_emails
         WHERE date >= ?
+          AND direction = 'in'
           AND from_address != ''
           AND from_address NOT LIKE '%noreply%'
           AND from_address NOT LIKE '%no-reply%'
@@ -544,6 +546,7 @@ def get_actionable_emails(conn, since: str) -> list:
           AND from_address NOT LIKE '%info@%'
           AND from_address NOT LIKE '%newsletter%'
         ORDER BY date DESC
+        LIMIT {int(limit)}
     """, (since,)).fetchall()
     return [dict(r) for r in rows]
 
