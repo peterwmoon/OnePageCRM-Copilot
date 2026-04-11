@@ -135,7 +135,8 @@ def _get_token(config, config_path, params):
     # Re-read disk in case an external auth script updated tokens without restarting the server
     path = Path(config_path or _DEFAULT_CONFIG_PATH)
     if path.exists():
-        fresh = json.load(open(path))
+        with open(path) as f:
+            fresh = json.load(f)
         if fresh.get(token_key) and fresh.get(expiry_key, 0) > time.time() + 60:
             config.update(fresh)
             return config[token_key]
