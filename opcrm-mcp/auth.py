@@ -49,21 +49,24 @@ def _work_flow_params(config):
 
 
 def _personal_flow_params():
-    """OAuth params for the personal account (consumers endpoint)."""
+    """OAuth params for the personal account (consumers endpoint, public client — no secret)."""
     return {
         "endpoint": _CONSUMERS_ENDPOINT,
         "token_key": "graph_access_token_personal",
         "refresh_key": "graph_refresh_token_personal",
         "expiry_key": "graph_token_expiry_personal",
         "scope": _PERSONAL_SCOPE,
+        "public_client": True,
     }
 
 
-def _refresh_token(config, config_path, *, endpoint, token_key, refresh_key, expiry_key, scope):
+def _refresh_token(config, config_path, *, endpoint, token_key, refresh_key, expiry_key, scope, public_client=False):
+    # Public clients (personal MSA) must not send client_secret — consumers endpoint rejects it
+    client_params = {"client_id": config["graph_client_id"]} if public_client else _client_params(config)
     r = requests.post(
         f"{endpoint}/token",
         data={
-            **_client_params(config),
+            **client_params,
             "grant_type": "refresh_token",
             "refresh_token": config[refresh_key],
             "scope": scope,
@@ -145,7 +148,9 @@ def _get_token(config, config_path, params):
 
     if config.get(refresh_key):
         return _refresh_token(config, config_path, **params)
-    return _run_device_flow(config, config_path, **params)
+    # Strip public_client before passing to _run_device_flow (it doesn't use it)
+    flow_params = {k: v for k, v in params.items() if k != "public_client"}
+    return _run_device_flow(config, config_path, **flow_params)
 
 
 def get_graph_token(config, config_path=None):
