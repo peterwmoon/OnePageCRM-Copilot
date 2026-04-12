@@ -98,6 +98,20 @@ def get_actionable_emails(since: str, limit: int = 50) -> list:
 
 
 @mcp.tool()
+def get_email_history_by_address(address: str, limit: int = 100) -> list:
+    """
+    Return full email history with a specific email address, regardless of whether they are in the CRM.
+    Searches both CRM-linked emails and unmatched emails (personal contacts, unknown senders, etc.).
+    Results include subject, body_preview, date, direction, mailbox, and source ('crm' or 'unmatched').
+    Sorted most recent first. limit defaults to 100.
+
+    Use this to look up history with anyone by email address — useful for personal contacts
+    who are not in OnePageCRM.
+    """
+    return db.get_email_history_by_address(_conn, address=address, limit=limit)
+
+
+@mcp.tool()
 def find_unknown_contacts(min_emails: int = 2, limit: int = 0) -> list:
     """
     Return people who have emailed you but are not in your CRM.

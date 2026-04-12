@@ -522,6 +522,31 @@ def get_unknown_contact_candidates(conn, min_emails=2, limit=None):
     return [dict(r) for r in rows]
 
 
+def get_email_history_by_address(conn, address: str, limit: int = 100) -> list:
+    """
+    Return full email history with a specific address, searching both the CRM-linked emails
+    table and the unmatched_emails table. Useful for people not in the CRM.
+    Results sorted by date descending.
+    """
+    addr = address.lower().strip()
+    rows = conn.execute(f"""
+        SELECT id, subject, body_preview, date, direction, from_address, to_addresses, mailbox,
+               'crm' AS source
+        FROM emails
+        WHERE lower(from_address) = ?
+           OR EXISTS (SELECT 1 FROM json_each(to_addresses) WHERE lower(value) = ?)
+        UNION ALL
+        SELECT id, subject, body_preview, date, direction, from_address, to_addresses, mailbox,
+               'unmatched' AS source
+        FROM unmatched_emails
+        WHERE lower(from_address) = ?
+           OR EXISTS (SELECT 1 FROM json_each(to_addresses) WHERE lower(value) = ?)
+        ORDER BY date DESC
+        LIMIT {int(limit)}
+    """, (addr, addr, addr, addr)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_actionable_emails(conn, since: str, limit: int = 50) -> list:
     """
     Return inbound emails from non-CRM senders received since `since` (ISO 8601 string),
