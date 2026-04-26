@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kiwi Dials — Activity Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f0f0ed;
+  --surface: #fafaf8;
+  --surface2: #e8e8e4;
+  --border: #d0d0c8;
+  --border2: #c0c0b8;
+  --text: #1a1a18;
+  --text-dim: #4a4a44;
+  --text-muted: #7a7a72;
+  --accent: #4040c0;
+
+  --c-signin:  #1a7a40;
+  --c-vote:    #6040b0;
+  --c-invite:  #8a6010;
+  --c-accept:  #0060a0;
+  --c-switch:  #8a2090;
+  --c-assess:  #c04010;
+  --c-page:    #606060;
+}
+
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  margin-right: 4px;
+}
+
+.header-sep { color: var(--text-muted); }
+
+.pills { display: flex; gap: 4px; }
+
+.pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.pill:hover { border-color: var(--accent); color: var(--text); }
+.pill.active { background: #d8d8f0; color: #3030a0; border-color: #8080cc; }
+
+.header-spacer { flex: 1; }
+
+.refresh-select {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.refresh-btn {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  background: #e0e0f4;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 3px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.refresh-btn:hover { background: #d0d0ec; }
+.refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Event list ─────────────────────────────────────────── */
+.event-list { padding: 0; }
+
+.event {
+  display: grid;
+  grid-template-columns: 76px 100px 220px 1fr;
+  align-items: center;
+  column-gap: 14px;
+  padding: 7px 20px 7px 14px;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  transition: background 0.08s;
+}
+.event:hover { background: var(--surface2); }
+
+.col-time {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.col-date {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.col-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  justify-self: start;
+}
+
+.col-email {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-email.anon { color: var(--text-muted); font-style: italic; }
+
+.col-detail {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Empty / Error / Loading states ────────────────────── */
+.state-msg {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.state-msg .state-icon {
+  font-size: 24px;
+  display: block;
+  margin-bottom: 10px;
+  opacity: 0.4;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface2);
+  border-top: 1px solid var(--border);
+  padding: 6px 20px;
+  display: flex;
+  justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.footer-right { color: var(--text-muted); }
+
+/* Extra bottom padding so footer doesn't cover last event */
+.event-list-wrap { padding-bottom: 32px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">Activity Log</span>
+  <span class="header-sep">/</span>
+  <div class="pills">
+    <button class="pill active" data-window="24h" onclick="setWindow('24h')">24h</button>
+    <button class="pill" data-window="48h" onclick="setWindow('48h')">48h</button>
+    <button class="pill" data-window="5d" onclick="setWindow('5d')">5d</button>
+  </div>
+  <div class="header-spacer"></div>
+  <select class="refresh-select" id="interval-select" onchange="setInterval_(this.value)">
+    <option value="60">↻ 1 min</option>
+    <option value="300" selected>↻ 5 min</option>
+    <option value="0">↻ off</option>
+  </select>
+  <button class="refresh-btn" id="refresh-btn" onclick="fetchEvents()">Refresh</button>
+</div>
+
+<div class="event-list-wrap">
+  <div class="event-list" id="event-list">
+    <div class="state-msg"><span class="state-icon">◌</span>Loading…</div>
+  </div>
+</div>
+
+<div class="footer">
+  <span id="footer-left">—</span>
+  <span class="footer-right" id="footer-right">—</span>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────
+const EVENT_CONFIG = {
+  sign_in:        { icon: '→',  color: 'var(--c-signin)', bg: '#d4ede0', label: 'Sign in' },
+  vote:           { icon: '◎',  color: 'var(--c-vote)',   bg: '#e4daf4', label: 'Vote' },
+  invite_sent:    { icon: '✉',  color: 'var(--c-invite)', bg: '#f0e6c8', label: 'Invite sent' },
+  invite_accepted:{ icon: '✓',  color: 'var(--c-accept)', bg: '#cce4f4', label: 'Invite accepted' },
+  team_switch:    { icon: '⇄',  color: 'var(--c-switch)', bg: '#f0d8f0', label: 'Team switch' },
+  assessment:     { icon: '✦',  color: 'var(--c-assess)', bg: '#f8e0d0', label: 'Assessment' },
+  page_view:      { icon: '▦',  color: 'var(--c-page)',   bg: '#e0e0dc', label: 'Page view' },
+}
+
+// ── State ─────────────────────────────────────────────────
+let currentWindow = '24h'
+let autoIntervalSecs = 300
+let refreshTimer = null
+let countdownTimer = null
+let nextRefreshAt = null
+let eventCount = 0
+
+// ── Fetch ─────────────────────────────────────────────────
+async function fetchEvents() {
+  const btn = document.getElementById('refresh-btn')
+  btn.disabled = true
+  btn.textContent = '…'
+
+  try {
+    const resp = await fetch(`/kiwi/events?window=${currentWindow}`)
+    if (!resp.ok) throw new Error(`Server returned ${resp.status}`)
+    const events = await resp.json()
+    eventCount = events.length
+    renderEvents(events)
+    updateFooterLeft()
+    scheduleNext()
+  } catch (err) {
+    document.getElementById('event-list').innerHTML =
+      `<div class="state-msg"><span class="state-icon">⚠</span>${escHtml(err.message)}</div>`
+    updateFooterLeft()
+    scheduleNext()
+  } finally {
+    btn.disabled = false
+    btn.textContent = 'Refresh'
+  }
+}
+
+// ── Render ────────────────────────────────────────────────
+function renderEvents(events) {
+  const list = document.getElementById('event-list')
+  if (!events.length) {
+    list.innerHTML = '<div class="state-msg"><span class="state-icon">○</span>No events in this window.</div>'
+    return
+  }
+  list.innerHTML = events.map(renderEvent).join('')
+}
+
+function renderEvent(ev) {
+  const cfg = EVENT_CONFIG[ev.eventType] || EVENT_CONFIG['page_view']
+  const ts = new Date(ev.timestamp)
+  const timeStr = ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const dateStr = isToday(ts) ? 'today' : ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const emailHtml = `<div class="col-email">${escHtml(ev.email || '')}</div>`
+
+  return `<div class="event" style="border-left-color:${cfg.color}">
+    <div class="col-time">${timeStr}<br><span class="col-date">${dateStr}</span></div>
+    <div class="col-label" style="background:${cfg.bg}; color:${cfg.color}">${cfg.label}</div>
+    ${emailHtml}
+    <div class="col-detail">${escHtml(ev.detail || '')}</div>
+  </div>`
+}
+
+// ── Controls ──────────────────────────────────────────────
+function setWindow(w) {
+  currentWindow = w
+  document.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.window === w)
+  })
+  fetchEvents()
+}
+
+function setInterval_(val) {
+  autoIntervalSecs = parseInt(val, 10)
+  clearTimers()
+  if (autoIntervalSecs > 0) scheduleNext()
+  else {
+    nextRefreshAt = null
+    updateFooterRight()
+  }
+}
+
+// ── Timer ─────────────────────────────────────────────────
+function scheduleNext() {
+  clearTimers()
+  if (autoIntervalSecs === 0) { nextRefreshAt = null; updateFooterRight(); return }
+  nextRefreshAt = Date.now() + autoIntervalSecs * 1000
+  refreshTimer = setTimeout(fetchEvents, autoIntervalSecs * 1000)
+  countdownTimer = setInterval(updateFooterRight, 1000)
+  updateFooterRight()
+}
+
+function clearTimers() {
+  if (refreshTimer)  { clearTimeout(refreshTimer);  refreshTimer = null }
+  if (countdownTimer){ clearInterval(countdownTimer); countdownTimer = null }
+}
+
+// ── Footer ────────────────────────────────────────────────
+function updateFooterLeft() {
+  document.getElementById('footer-left').textContent =
+    `${eventCount} event${eventCount !== 1 ? 's' : ''} · last ${currentWindow}   refreshed ${now()}`
+}
+
+function updateFooterRight() {
+  const el = document.getElementById('footer-right')
+  if (!nextRefreshAt) { el.textContent = 'auto-refresh off'; return }
+  const secs = Math.max(0, Math.round((nextRefreshAt - Date.now()) / 1000))
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  el.textContent = `next in ${m}m ${String(s).padStart(2,'0')}s`
+}
+
+// ── Helpers ───────────────────────────────────────────────
+function isToday(d) {
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+
+function now() {
+  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+// ── Boot ──────────────────────────────────────────────────
+fetchEvents()
+</script>
+</body>
+</html>
